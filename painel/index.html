@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Link3 · Conteúdo</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%23141414'/><text x='16' y='22' font-size='16' text-anchor='middle' fill='%23F0C41D' font-family='Arial' font-weight='800'>L3</text></svg>">
+<style>
+  :root { --bg:#f6f5f1; --panel:#fff; --ink:#161614; --mute:#6c6a63; --line:#e5e3dc; --acc:#f0c41d; --acc-ink:#5c4700; --acc-soft:#fdf6d8;
+          --red:#b42318; --red-soft:#fdecea; --green:#067647; --green-soft:#e7f6ee; --blue:#1d4ed8; --blue-soft:#e8efff; --amber:#b54708; --amber-soft:#fef4e6; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; background:var(--bg); color:var(--ink); }
+  header { display:flex; align-items:center; gap:18px; padding:10px 24px; background:var(--ink); color:#fff; position:sticky; top:0; z-index:5; flex-wrap:wrap; }
+  header .marca { font-weight:800; letter-spacing:.2px; } header .marca b { color:var(--acc); }
+  nav { display:flex; gap:2px; } nav button { background:none; border:0; color:#bdbbb3; padding:7px 11px; border-radius:7px; cursor:pointer; font:inherit; }
+  nav button.on { background:#2a2a27; color:#fff; font-weight:600; } nav button .n { background:var(--acc); color:var(--ink); border-radius:9px; padding:0 6px; font-size:11px; font-weight:700; margin-left:4px; }
+  header .grow { flex:1; } header .quem { color:#bdbbb3; font-size:12px; } header .btn { background:#2a2a27; color:#fff; border-color:#3a3a36; }
+  main { max-width:1180px; margin:0 auto; padding:22px 24px 60px; }
+  h2 { font-size:18px; margin:0 0 14px; } h3 { font-size:14px; margin:18px 0 8px; }
+  .box { background:var(--panel); border:1px solid var(--line); border-radius:12px; }
+  .pad { padding:16px 18px; }
+  table { width:100%; border-collapse:collapse; } th { text-align:left; font-size:12px; color:var(--mute); font-weight:500; padding:9px 12px; border-bottom:1px solid var(--line); white-space:nowrap; }
+  td { padding:10px 12px; border-bottom:1px solid var(--line); vertical-align:middle; } tr:last-child td { border-bottom:0; }
+  tr.click { cursor:pointer; } tr.click:hover td { background:#faf9f5; }
+  .num { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .tag { display:inline-block; padding:2px 8px; border-radius:6px; font-size:12px; font-weight:500; white-space:nowrap; }
+  .s-fila { background:#f1f0ec; color:var(--mute); } .s-rodando { background:var(--blue-soft); color:var(--blue); } .s-voce { background:var(--acc-soft); color:var(--acc-ink); }
+  .s-ok { background:var(--green-soft); color:var(--green); } .s-erro { background:var(--red-soft); color:var(--red); }
+  input, select, textarea { font:inherit; padding:8px 10px; border:1px solid var(--line); border-radius:8px; background:#fff; color:var(--ink); width:100%; }
+  textarea { min-height:84px; resize:vertical; } input[type=color] { padding:2px; height:38px; width:56px; } input[type=checkbox], input[type=radio] { width:auto; }
+  label.f { display:block; font-size:12px; color:var(--mute); margin:12px 0 5px; }
+  .btn { font:inherit; padding:8px 13px; border-radius:8px; border:1px solid var(--line); background:#fff; color:var(--ink); cursor:pointer; white-space:nowrap; }
+  .btn.pri { background:var(--ink); color:#fff; border-color:var(--ink); } .btn.acc { background:var(--acc); border-color:var(--acc); font-weight:600; }
+  .btn.red { color:var(--red); } .btn:disabled { opacity:.5; cursor:default; } .btn.sm { padding:4px 9px; font-size:12px; }
+  .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; } .row > .grow { flex:1; }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:16px; } .grid3 { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
+  @media (max-width:860px) { .grid2, .grid3 { grid-template-columns:1fr; } main { padding:14px; } .hide-sm { display:none; } }
+  .mute { color:var(--mute); } .small { font-size:12px; } .empty { padding:30px; text-align:center; color:var(--mute); }
+  .login { max-width:360px; margin:12vh auto; padding:28px; } .login h1 { font-size:20px; margin:0 0 4px; } .login input { margin-top:12px; } .login .btn { width:100%; margin-top:14px; }
+  dialog { border:1px solid var(--line); border-radius:14px; padding:0; width:min(860px,96vw); max-height:92vh; }
+  dialog .topo { display:flex; align-items:center; gap:10px; padding:14px 18px; border-bottom:1px solid var(--line); position:sticky; top:0; background:#fff; z-index:1; }
+  dialog .corpo { padding:16px 18px; overflow:auto; }
+  .tipos { display:flex; gap:8px; } .tipos label { flex:1; border:1px solid var(--line); border-radius:10px; padding:12px; cursor:pointer; text-align:center; }
+  .tipos input { display:none; } .tipos label:has(input:checked) { border-color:var(--ink); background:#faf9f5; font-weight:600; }
+  .hist { list-style:none; margin:0; padding:0; } .hist li { padding:6px 0; border-bottom:1px dashed var(--line); font-size:13px; display:flex; gap:10px; } .hist li:last-child { border:0; }
+  .pergunta { background:var(--acc-soft); border:1px solid #f3e19a; border-radius:10px; padding:12px 14px; margin-bottom:10px; }
+  .previa { background:#111; border-radius:10px; display:flex; justify-content:center; } .previa video, .previa img { max-height:60vh; max-width:100%; border-radius:10px; }
+  .cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; margin-bottom:16px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:12px 14px; } .card .k { font-size:12px; color:var(--mute); } .card .v { font-size:22px; font-weight:650; }
+  .mock { width:180px; aspect-ratio:9/16; border-radius:14px; position:relative; overflow:hidden; background:linear-gradient(160deg,#5b6170,#2b2f38); flex-shrink:0; }
+  .mock .leg { position:absolute; left:10px; right:10px; text-align:center; font-weight:800; font-size:15px; line-height:1.15; }
+  .mock .leg span { padding:2px 5px; border-radius:4px; } .mock .logo { position:absolute; top:10px; right:10px; width:34px; height:34px; object-fit:contain; }
+  .ativo { display:flex; gap:8px; align-items:center; padding:7px 0; border-bottom:1px solid var(--line); font-size:13px; } .ativo:last-child { border:0; }
+  .chip { display:inline-block; width:14px; height:14px; border-radius:4px; vertical-align:middle; border:1px solid rgba(0,0,0,.15); }
+  .toast { position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:var(--ink); color:#fff; padding:9px 14px; border-radius:8px; font-size:13px; display:none; z-index:30; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<dialog id="dlg"><div class="topo"><strong id="dlgTitulo"></strong><span class="grow" style="flex:1"></span><button class="btn sm" onclick="fecharDlg()">Fechar</button></div><div class="corpo" id="dlgCorpo"></div></dialog>
+<div class="toast" id="toast"></div>
+
+<script src="config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+const cfg = window.LINK3 || {};
+const sb = supabase.createClient(cfg.url, cfg.anonKey);
+const $ = (s, el = document) => el.querySelector(s);
+const $$ = (s, el = document) => [...el.querySelectorAll(s)];
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const quando = (d) => d ? new Date(d).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
+const usd = (n) => 'US$ ' + Number(n || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const toast = (m) => { const t = $('#toast'); t.textContent = m; t.style.display = 'block'; clearTimeout(toast.t); toast.t = setTimeout(() => (t.style.display = 'none'), 2800); };
+const fecharDlg = () => { $('#dlg').close(); S.aberto = null; };
+// aceita link do Drive ou o id puro
+const idDrive = (v) => { v = String(v || '').trim(); const m = v.match(/\/d\/([\w-]{10,})/) || v.match(/[?&]id=([\w-]{10,})/) || v.match(/folders\/([\w-]{10,})/); return m ? m[1] : v; };
+const linkDrive = (id, pasta) => id ? `https://drive.google.com/${pasta ? 'drive/folders' : 'file/d'}/${id}` : '';
+
+const STATUS = {
+  na_fila: ['Na fila', 's-fila'], baixando: ['Baixando', 's-rodando'], preparando: ['Transcrevendo', 's-rodando'], planejando: ['Montando roteiro', 's-rodando'],
+  aguardando_resposta: ['Pergunta para você', 's-voce'], renderizando: ['Renderizando', 's-rodando'], previa_pronta: ['Prévia pronta', 's-voce'],
+  ajuste_pedido: ['Ajustando', 's-rodando'], aprovado: ['Aprovado', 's-rodando'], entregando: ['Enviando ao Drive', 's-rodando'],
+  entregue: ['Entregue', 's-ok'], erro: ['Erro', 's-erro'], cancelado: ['Cancelado', 's-fila'],
+};
+const tag = (s) => `<span class="tag ${STATUS[s]?.[1] || ''}">${STATUS[s]?.[0] || s}</span>`;
+const TIPO = { reel: 'Reel', carrossel: 'Carrossel', post: 'Post' };
+const ASSET = { logo: 'Logo principal', logo_branca: 'Logo branca', simbolo: 'Símbolo', fonte: 'Fonte', vinheta_abertura: 'Vinheta de abertura', vinheta_encerramento: 'Vinheta de encerramento', musica: 'Música', foto: 'Foto', manual: 'Manual de marca', referencia: 'Referência', outro: 'Outro' };
+
+const S = { aba: 'pedidos', perfil: null, clientes: [], kits: {}, jobs: [], filtro: { status: '', cliente: '' }, aberto: null };
+
+async function iniciar() {
+  if (!cfg.url || !cfg.anonKey) { $('#app').innerHTML = '<div class="box login"><h1>Configuração faltando</h1><p class="mute">Preencha o config.js com a URL e a chave pública do Supabase.</p></div>'; return; }
+  sb.auth.onAuthStateChange((_e, s) => { if (s && !S.perfil) carregar(); if (!s) { S.perfil = null; telaLogin(); } });
+  const { data } = await sb.auth.getSession();
+  data.session ? carregar() : telaLogin();
+}
+
+function telaLogin() {
+  $('#app').innerHTML = `<div class="box login"><h1>Link3 · Conteúdo</h1><p class="mute small">Entre com o e-mail e a senha que você recebeu.</p>
+    <form id="fLogin"><input type="email" name="email" placeholder="seu@email.com" required autocomplete="username"><input type="password" name="senha" placeholder="Senha" required autocomplete="current-password">
+    <button class="btn pri">Entrar</button></form><p class="small mute" id="msg"></p></div>`;
+  $('#fLogin').onsubmit = async (e) => {
+    e.preventDefault(); $('#msg').textContent = 'Entrando…';
+    const { error } = await sb.auth.signInWithPassword({ email: e.target.email.value.trim(), password: e.target.senha.value });
+    $('#msg').textContent = error ? 'E-mail ou senha inválidos.' : '';
+  };
+}
+
+async function carregar() {
+  const { data: u } = await sb.auth.getUser();
+  const { data: perfil } = await sb.from('profiles').select('*').eq('id', u.user.id).maybeSingle();
+  if (!perfil) { $('#app').innerHTML = `<div class="box login"><h1>Sem acesso</h1><p class="mute">O e-mail ${esc(u.user.email)} ainda não foi liberado no painel. Peça ao administrador.</p><button class="btn" onclick="sb.auth.signOut()">Sair</button></div>`; return; }
+  S.perfil = perfil;
+  await Promise.all([carregarClientes(), carregarJobs()]);
+  sb.channel('pedidos').on('postgres_changes', { event: '*', schema: 'public', table: 'jobs' }, async () => { await carregarJobs(); if (S.aba === 'pedidos') renderConteudo(); if (S.aberto) abrirPedido(S.aberto, true); render(true); })
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'questions' }, () => S.aberto && abrirPedido(S.aberto, true)).subscribe();
+  render();
+}
+async function carregarClientes() {
+  const [c, k] = await Promise.all([sb.from('clients').select('*').order('nome'), sb.from('brand_kits').select('*')]);
+  S.clientes = c.data || []; S.kits = Object.fromEntries((k.data || []).map((x) => [x.client_id, x]));
+}
+async function carregarJobs() {
+  const { data } = await sb.from('jobs').select('id, numero, client_id, tipo, origem_nome, origem_drive_id, comando, status, erro, custo_ia_usd, created_at, updated_at').order('created_at', { ascending: false }).limit(300);
+  S.jobs = data || [];
+}
+
+function render(soMenu) {
+  const pend = S.jobs.filter((j) => ['aguardando_resposta', 'previa_pronta', 'erro'].includes(j.status)).length;
+  const abas = [['pedidos', 'Pedidos', pend], ['novo', 'Novo pedido'], ['clientes', 'Clientes'], ...(S.perfil.papel === 'admin' ? [['equipe', 'Equipe']] : [])];
+  const menu = abas.map(([k, t, n]) => `<button data-aba="${k}" class="${S.aba === k ? 'on' : ''}">${t}${n ? `<span class="n">${n}</span>` : ''}</button>`).join('');
+  if (soMenu && $('nav')) { $('nav').innerHTML = menu; ligarMenu(); return; }
+  $('#app').innerHTML = `<header><span class="marca">Link<b>3</b> · Conteúdo</span><nav>${menu}</nav><span class="grow"></span>
+    <span class="quem">${esc(S.perfil.nome || S.perfil.email)} · ${S.perfil.papel}</span><button class="btn sm" id="sair">Sair</button></header><main id="conteudo"></main>`;
+  $('#sair').onclick = () => sb.auth.signOut();
+  ligarMenu(); renderConteudo();
+}
+function ligarMenu() { $$('nav button').forEach((b) => (b.onclick = () => { S.aba = b.dataset.aba; render(); })); }
+function renderConteudo() { ({ pedidos: renderPedidos, novo: renderNovo, clientes: renderClientes, equipe: renderEquipe })[S.aba](); }
+const nomeCliente = (id) => S.clientes.find((c) => c.id === id)?.nome || '—';
+
+// ================= Pedidos =================
+function renderPedidos() {
+  const f = S.filtro;
+  const grupo = { voce: ['aguardando_resposta', 'previa_pronta', 'erro'], rodando: ['na_fila', 'baixando', 'preparando', 'planejando', 'renderizando', 'ajuste_pedido', 'aprovado', 'entregando'], fim: ['entregue', 'cancelado'] };
+  const lista = S.jobs.filter((j) => (!f.cliente || j.client_id === f.cliente) && (!f.status || grupo[f.status].includes(j.status)));
+  const mes = S.jobs.filter((j) => new Date(j.created_at).getMonth() === new Date().getMonth());
+  const entregues = mes.filter((j) => j.status === 'entregue');
+  const custo = mes.reduce((s, j) => s + Number(j.custo_ia_usd), 0);
+  $('#conteudo').innerHTML = `
+    <div class="cards">
+      <div class="card"><div class="k">Esperando você</div><div class="v">${S.jobs.filter((j) => grupo.voce.includes(j.status)).length}</div></div>
+      <div class="card"><div class="k">Em produção</div><div class="v">${S.jobs.filter((j) => grupo.rodando.includes(j.status)).length}</div></div>
+      <div class="card"><div class="k">Entregues no mês</div><div class="v">${entregues.length}</div></div>
+      <div class="card"><div class="k">Custo de IA no mês</div><div class="v">${usd(custo)}</div></div>
+      <div class="card"><div class="k">Custo médio por peça</div><div class="v">${entregues.length ? usd(entregues.reduce((s, j) => s + Number(j.custo_ia_usd), 0) / entregues.length) : '—'}</div></div>
+    </div>
+    <div class="row" style="margin-bottom:12px">
+      <select id="fStatus" style="width:auto"><option value="">Todos</option><option value="voce" ${f.status === 'voce' ? 'selected' : ''}>Esperando você</option><option value="rodando" ${f.status === 'rodando' ? 'selected' : ''}>Em produção</option><option value="fim" ${f.status === 'fim' ? 'selected' : ''}>Finalizados</option></select>
+      <select id="fCliente" style="width:auto"><option value="">Todos os clientes</option>${S.clientes.map((c) => `<option value="${c.id}" ${f.cliente === c.id ? 'selected' : ''}>${esc(c.nome)}</option>`).join('')}</select>
+      <span class="grow"></span><button class="btn acc" onclick="S.aba='novo';render()">Novo pedido</button>
+    </div>
+    <div class="box">${lista.length ? `<table><tr><th>#</th><th>Cliente</th><th>Peça</th><th class="hide-sm">Comando</th><th>Status</th><th class="hide-sm">Atualizado</th><th class="num hide-sm">Custo IA</th></tr>
+      ${lista.map((j) => `<tr class="click" data-id="${j.id}"><td class="mute">${j.numero}</td><td>${esc(nomeCliente(j.client_id))}</td>
+        <td>${TIPO[j.tipo]}<div class="small mute">${esc(j.origem_nome || '')}</div></td><td class="hide-sm small mute" style="max-width:280px">${esc((j.comando || '').slice(0, 90))}</td>
+        <td>${tag(j.status)}</td><td class="small mute hide-sm">${quando(j.updated_at)}</td><td class="num small hide-sm">${usd(j.custo_ia_usd)}</td></tr>`).join('')}</table>`
+      : `<div class="empty">${S.jobs.length ? 'Nenhum pedido neste filtro.' : 'Nenhum pedido ainda. Comece em “Novo pedido”.'}</div>`}</div>`;
+  $('#fStatus').onchange = (e) => { f.status = e.target.value; renderPedidos(); };
+  $('#fCliente').onchange = (e) => { f.cliente = e.target.value; renderPedidos(); };
+  $$('tr.click').forEach((tr) => (tr.onclick = () => abrirPedido(tr.dataset.id)));
+}
+
+// roteiro em linguagem simples: aceita o formato do worker sem depender dele estar completo
+function roteiroSimples(r) {
+  if (!r) return '<p class="mute small">O roteiro aparece aqui quando a IA terminar.</p>';
+  const it = [];
+  if (r.titulo) it.push(`<li><b>Título de gancho:</b> ${esc(r.titulo)}</li>`);
+  if (Array.isArray(r.cortes)) it.push(`<li><b>Cortes:</b> ${r.cortes.length} trecho(s) mantidos${r.duracao_final ? `, reel final de ${Math.round(r.duracao_final)} s` : ''}</li>`);
+  if (Array.isArray(r.cenas)) r.cenas.forEach((c) => it.push(`<li><b>${esc(c.tipo || 'Cena')}</b>${c.inicio != null ? ` aos ${Number(c.inicio).toFixed(1)} s` : ''}: ${esc(c.texto || c.descricao || '')}</li>`));
+  if (Array.isArray(r.laminas)) r.laminas.forEach((l, i) => it.push(`<li><b>Lâmina ${i + 1}</b> (${esc(l.layout || '')}): ${esc(l.titulo || l.texto || '')}</li>`));
+  if (r.legenda) it.push(`<li><b>Legenda do post:</b> ${esc(r.legenda)}</li>`);
+  if (r.cta) it.push(`<li><b>CTA:</b> ${esc(r.cta)}</li>`);
+  return it.length ? `<ul style="margin:0;padding-left:18px">${it.join('')}</ul>` : `<pre class="small" style="white-space:pre-wrap">${esc(JSON.stringify(r, null, 2))}</pre>`;
+}
+
+async function abrirPedido(id, recarregar) {
+  S.aberto = id;
+  const [{ data: j }, { data: ev }, { data: qs }] = await Promise.all([
+    sb.from('jobs').select('*').eq('id', id).single(),
+    sb.from('job_events').select('*').eq('job_id', id).order('id', { ascending: false }),
+    sb.from('questions').select('*').eq('job_id', id).order('created_at'),
+  ]);
+  if (!j) return;
+  let previa = '';
+  if (j.previa_path) {
+    const { data: u } = await sb.storage.from('previas').createSignedUrl(j.previa_path, 3600);
+    if (u?.signedUrl) previa = /\.(mp4|mov|webm)$/i.test(j.previa_path) ? `<video src="${u.signedUrl}" controls playsinline></video>` : `<img src="${u.signedUrl}" alt="Prévia">`;
+  }
+  const abertas = (qs || []).filter((q) => !q.resposta);
+  $('#dlgTitulo').innerHTML = `#${j.numero} · ${esc(nomeCliente(j.client_id))} · ${TIPO[j.tipo]} ${tag(j.status)}`;
+  $('#dlgCorpo').innerHTML = `
+    ${abertas.map((q) => `<div class="pergunta"><b>A IA perguntou:</b> ${esc(q.pergunta)}
+      <div class="row" style="margin-top:8px">${(q.opcoes || []).map((o) => `<button class="btn sm resp" data-q="${q.id}" data-v="${esc(o)}">${esc(o)}</button>`).join('')}
+      <input class="respTxt" data-q="${q.id}" placeholder="Ou escreva a resposta e tecle Enter" style="flex:1;min-width:200px"></div></div>`).join('')}
+    ${j.status === 'erro' ? `<div class="pergunta" style="background:var(--red-soft);border-color:#f5c2bd"><b>Erro:</b> ${esc(j.erro)}<div class="small mute">A equipe da Liderate já recebeu o alerta.</div></div>` : ''}
+    <div class="grid2">
+      <div>${previa ? `<div class="previa">${previa}</div>` : `<div class="box empty">${['entregue'].includes(j.status) ? 'Entregue no Drive.' : 'A prévia aparece aqui quando o render terminar.'}</div>`}
+        ${j.final_drive_id ? `<p class="small"><a href="${linkDrive(j.final_drive_id)}" target="_blank" rel="noopener">Abrir o arquivo final no Drive</a></p>` : ''}</div>
+      <div>
+        <h3 style="margin-top:0">Comando</h3><p style="margin:0;white-space:pre-wrap">${esc(j.comando || '—')}</p>
+        <p class="small mute">Arquivo: ${j.origem_drive_id ? `<a href="${linkDrive(j.origem_drive_id)}" target="_blank" rel="noopener">${esc(j.origem_nome || 'abrir no Drive')}</a>` : '—'}</p>
+        <h3>Roteiro</h3>${roteiroSimples(j.roteiro)}
+        ${j.status === 'previa_pronta' ? `<h3>Ajuste</h3><textarea id="ajuste" placeholder="Ex.: tira o trecho em que ele gagueja aos 12 s e deixa a legenda maior"></textarea>
+          <div class="row" style="margin-top:10px"><button class="btn" id="btnAjuste">Pedir ajuste</button><span class="grow"></span><button class="btn acc" id="btnAprovar">Aprovar e enviar ao Drive</button></div>` : ''}
+        <div class="row" style="margin-top:10px">${j.status === 'erro' ? '<button class="btn" id="btnReenviar">Tentar de novo</button>' : ''}
+          ${!['entregue', 'cancelado', 'entregando'].includes(j.status) ? '<button class="btn sm red" id="btnCancelar">Cancelar pedido</button>' : ''}</div>
+        <h3>Histórico</h3><ul class="hist">${(ev || []).map((e) => `<li><span class="mute small" style="width:92px;flex-shrink:0">${quando(e.criado_em)}</span><span>${STATUS[e.status]?.[0] || e.status}${e.mensagem ? ` · <span class="mute">${esc(e.mensagem)}</span>` : ''}</span></li>`).join('')}</ul>
+        <p class="small mute">Custo de IA: ${usd(j.custo_ia_usd)} · ${j.tokens_entrada + j.tokens_saida} tokens · ${j.segundos_audio} s de áudio</p>
+      </div>
+    </div>`;
+  const responder = async (q, v) => { if (!v.trim()) return; const { error } = await sb.rpc('responder_pergunta', { p_pergunta: q, p_resposta: v.trim() }); toast(error ? 'Erro: ' + error.message : 'Resposta enviada'); abrirPedido(id, true); };
+  $$('.resp').forEach((b) => (b.onclick = () => responder(b.dataset.q, b.dataset.v)));
+  $$('.respTxt').forEach((i) => (i.onkeydown = (e) => e.key === 'Enter' && responder(i.dataset.q, i.value)));
+  const acao = async (fn, args, ok) => { const { error } = await sb.rpc(fn, args); toast(error ? 'Erro: ' + error.message : ok); await carregarJobs(); abrirPedido(id, true); render(true); };
+  $('#btnAprovar') && ($('#btnAprovar').onclick = () => acao('aprovar_job', { p_job: id }, 'Aprovado. O arquivo final vai para o Drive.'));
+  $('#btnAjuste') && ($('#btnAjuste').onclick = () => { const t = $('#ajuste').value.trim(); if (!t) return toast('Descreva o ajuste'); acao('pedir_ajuste', { p_job: id, p_comando: t }, 'Ajuste enviado'); });
+  $('#btnReenviar') && ($('#btnReenviar').onclick = () => acao('reenviar_job', { p_job: id }, 'Pedido voltou para a fila'));
+  $('#btnCancelar') && ($('#btnCancelar').onclick = async () => { const { error } = await sb.from('jobs').update({ status: 'cancelado' }).eq('id', id); toast(error ? 'Erro: ' + error.message : 'Pedido cancelado'); await carregarJobs(); abrirPedido(id, true); render(true); });
+  if (!recarregar || !$('#dlg').open) $('#dlg').showModal();
+}
+
+// ================= Novo pedido =================
+function renderNovo() {
+  const ativos = S.clientes.filter((c) => c.ativo);
+  if (!ativos.length) { $('#conteudo').innerHTML = `<div class="box empty">Cadastre um cliente primeiro.<br><br><button class="btn acc" onclick="S.aba='clientes';render()">Cadastrar cliente</button></div>`; return; }
+  $('#conteudo').innerHTML = `<h2>Novo pedido</h2><form class="box pad" id="fNovo" style="max-width:720px">
+    <label class="f">Cliente</label><select name="cliente" required><option value="">Escolha o cliente</option>${ativos.map((c) => `<option value="${c.id}">${esc(c.nome)}${S.kits[c.id] ? '' : ' (sem identidade cadastrada)'}</option>`).join('')}</select>
+    <label class="f">Tipo de peça</label><div class="tipos">${Object.entries(TIPO).map(([k, t], i) => `<label><input type="radio" name="tipo" value="${k}" ${i ? '' : 'checked'}>${t}</label>`).join('')}</div>
+    <label class="f">Arquivo no Google Drive</label><input name="arquivo" placeholder="Cole o link do vídeo ou da pasta de fotos no Drive">
+    <div class="small mute" style="margin-top:4px">No Drive: botão direito no arquivo → Compartilhar → Copiar link.</div>
+    <label class="f">Nome do arquivo (opcional)</label><input name="nome" placeholder="Ex.: depoimento-joao.mp4">
+    <label class="f">Comando</label><textarea name="comando" required placeholder="Ex.: reel de até 45 s, corta as pausas, gancho sobre clareamento nos 3 primeiros segundos, CTA para o WhatsApp no final"></textarea>
+    <div id="avisoKit" class="small" style="margin-top:8px"></div>
+    <div class="row" style="margin-top:14px"><span class="grow"></span><button class="btn acc">Enviar para a fila</button></div></form>`;
+  const f = $('#fNovo');
+  f.cliente.onchange = () => { $('#avisoKit').innerHTML = f.cliente.value && !S.kits[f.cliente.value] ? '<span style="color:var(--amber)">Este cliente ainda não tem identidade cadastrada: a peça sai sem logo e com cores padrão.</span>' : ''; };
+  f.onsubmit = async (e) => {
+    e.preventDefault();
+    const tipo = f.tipo.value, arq = idDrive(f.arquivo.value);
+    if (tipo === 'reel' && !arq) return toast('Cole o link do vídeo bruto no Drive');
+    const btn = f.querySelector('button.acc'); btn.disabled = true;
+    const { data, error } = await sb.from('jobs').insert({ client_id: f.cliente.value, tipo, origem_drive_id: arq || null, origem_nome: f.nome.value.trim() || null, comando: f.comando.value.trim(), created_by: S.perfil.id }).select('id').single();
+    btn.disabled = false;
+    if (error) return toast('Erro: ' + error.message);
+    toast('Pedido na fila'); await carregarJobs(); S.aba = 'pedidos'; render(); abrirPedido(data.id);
+  };
+}
+
+// ================= Clientes e identidade =================
+function renderClientes() {
+  $('#conteudo').innerHTML = `<div class="row" style="margin-bottom:12px"><h2 style="margin:0">Clientes</h2><span class="grow"></span><button class="btn acc" id="btnNovoCli">Novo cliente</button></div>
+    <div class="box">${S.clientes.length ? `<table><tr><th>Cliente</th><th class="hide-sm">Instagram</th><th>Identidade</th><th class="hide-sm">Pastas no Drive</th><th class="num">Pedidos</th><th>Status</th></tr>
+      ${S.clientes.map((c) => { const k = S.kits[c.id]; const cores = k ? Object.values(k.cores || {}).filter(Boolean) : [];
+        return `<tr class="click" data-id="${c.id}"><td><b>${esc(c.nome)}</b></td><td class="hide-sm">${esc(c.instagram || '')}</td>
+        <td>${k ? cores.map((x) => `<span class="chip" style="background:${esc(x)}"></span>`).join(' ') + (k.logo_id ? ' <span class="small mute">· logo</span>' : ' <span class="small" style="color:var(--amber)">· sem logo</span>') : '<span class="small" style="color:var(--amber)">não cadastrada</span>'}</td>
+        <td class="hide-sm small">${c.pasta_brutos_id ? '✓ brutos' : '<span style="color:var(--amber)">falta brutos</span>'} · ${c.pasta_finalizados_id ? '✓ finalizados' : '<span style="color:var(--amber)">falta finalizados</span>'}</td>
+        <td class="num">${S.jobs.filter((j) => j.client_id === c.id).length}</td><td>${c.ativo ? '<span class="tag s-ok">Ativo</span>' : '<span class="tag s-fila">Pausado</span>'}</td></tr>`; }).join('')}</table>`
+      : '<div class="empty">Nenhum cliente cadastrado.</div>'}</div>`;
+  $('#btnNovoCli').onclick = () => abrirCliente();
+  $$('tr.click').forEach((tr) => (tr.onclick = () => abrirCliente(tr.dataset.id)));
+}
+
+async function abrirCliente(id) {
+  S.aberto = null;
+  const c = S.clientes.find((x) => x.id === id) || { nome: '', ctas: [], ativo: true };
+  const k = S.kits[id] || { cores: {}, fontes: {}, estilo_legenda: {} };
+  const cor = { principal: '#F0C41D', secundaria: '#161614', fundo: '#FFFFFF', texto: '#161614', ...k.cores };
+  const leg = { posicao: 'baixo', caixa: true, destaque: 'principal', maiusculas: false, palavras: 3, ...k.estilo_legenda };
+  const { data: assets } = id ? await sb.from('brand_assets').select('*').eq('client_id', id).order('created_at') : { data: [] };
+  const opc = (tipos, sel) => `<option value="">—</option>` + (assets || []).filter((a) => tipos.includes(a.tipo)).map((a) => `<option value="${a.id}" ${sel === a.id ? 'selected' : ''}>${esc(a.nome)}</option>`).join('');
+  $('#dlgTitulo').textContent = id ? c.nome : 'Novo cliente';
+  $('#dlgCorpo').innerHTML = `<form id="fCli">
+    <div class="grid2"><div><label class="f">Nome</label><input name="nome" required value="${esc(c.nome)}"></div><div><label class="f">@ no Instagram</label><input name="instagram" value="${esc(c.instagram || '')}" placeholder="@cliente"></div></div>
+    <div class="grid2"><div><label class="f">Pasta de brutos no Drive</label><input name="brutos" value="${esc(c.pasta_brutos_id || '')}" placeholder="Link da pasta"></div><div><label class="f">Pasta de finalizados no Drive</label><input name="finalizados" value="${esc(c.pasta_finalizados_id || '')}" placeholder="Link da pasta"></div></div>
+    <label class="f">Tom de voz (3 a 5 linhas)</label><textarea name="tom" placeholder="Direto, técnico, sem gíria, trata o público por você">${esc(c.tom_voz || '')}</textarea>
+    <div class="grid2"><div><label class="f">CTAs padrão (um por linha)</label><textarea name="ctas" placeholder="Chama no WhatsApp&#10;Link na bio">${esc((c.ctas || []).join('\n'))}</textarea></div>
+      <div><label class="f">O que nunca fazer</label><textarea name="regras" placeholder="Nunca usar vermelho; não falar preço">${esc(c.regras || '')}</textarea></div></div>
+    <label class="small" style="display:block;margin-top:10px"><input type="checkbox" name="ativo" ${c.ativo ? 'checked' : ''}> Cliente ativo</label>
+
+    <h3>Identidade visual</h3>
+    <div class="row" style="align-items:flex-start;gap:22px">
+      <div style="flex:1;min-width:280px">
+        <div class="grid3" style="grid-template-columns:repeat(4,1fr)">${[['principal', 'Principal'], ['secundaria', 'Secundária'], ['fundo', 'Fundo'], ['texto', 'Texto']].map(([n, t]) => `<div><label class="f">${t}</label><input type="color" name="cor_${n}" value="${esc(cor[n])}"></div>`).join('')}</div>
+        <div class="grid2"><div><label class="f">Fonte dos títulos</label><input name="fonte_titulo" value="${esc(k.fontes?.titulo || '')}" placeholder="Nome no Google Fonts ou arquivo enviado"></div>
+          <div><label class="f">Fonte do texto</label><input name="fonte_corpo" value="${esc(k.fontes?.corpo || '')}" placeholder="Ex.: Montserrat"></div></div>
+        <div class="grid3"><div><label class="f">Posição da legenda</label><select name="leg_posicao">${['cima', 'meio', 'baixo'].map((p) => `<option ${leg.posicao === p ? 'selected' : ''}>${p}</option>`).join('')}</select></div>
+          <div><label class="f">Destaque da palavra</label><select name="leg_destaque">${['principal', 'secundaria'].map((p) => `<option value="${p}" ${leg.destaque === p ? 'selected' : ''}>cor ${p === 'principal' ? 'principal' : 'secundária'}</option>`).join('')}</select></div>
+          <div><label class="f">Palavras por linha</label><input type="number" name="leg_palavras" min="1" max="6" value="${leg.palavras}"></div></div>
+        <label class="small" style="display:block;margin-top:10px"><input type="checkbox" name="leg_caixa" ${leg.caixa ? 'checked' : ''}> Legenda com caixa de fundo</label>
+        <label class="small" style="display:block;margin-top:6px"><input type="checkbox" name="leg_maiusculas" ${leg.maiusculas ? 'checked' : ''}> Legenda em maiúsculas</label>
+        ${id ? `<div class="grid3"><div><label class="f">Logo usado nas peças</label><select name="logo_id">${opc(['logo', 'logo_branca', 'simbolo'], k.logo_id)}</select></div>
+          <div><label class="f">Vinheta de abertura</label><select name="vin_ab">${opc(['vinheta_abertura'], k.vinheta_abertura_id)}</select></div>
+          <div><label class="f">Vinheta de encerramento</label><select name="vin_enc">${opc(['vinheta_encerramento'], k.vinheta_encerramento_id)}</select></div></div>` : ''}
+      </div>
+      <div><div class="mock" id="mock"><img class="logo" id="mockLogo" alt="" style="display:none" onload="this.style.display='block'"><div class="leg" id="mockLeg"></div></div><div class="small mute" style="text-align:center;margin-top:6px">Prévia da legenda</div></div>
+    </div>
+    ${id ? `<h3>Arquivos da marca</h3>
+      <div class="row"><select id="upTipo" style="width:auto">${Object.entries(ASSET).map(([v, t]) => `<option value="${v}">${t}</option>`).join('')}</select><input type="file" id="upArq" multiple style="flex:1;min-width:200px"><button type="button" class="btn" id="btnUp">Enviar</button></div>
+      <div class="small mute" style="margin-top:4px">Logo em SVG ou PNG transparente · fontes em TTF/OTF · vinhetas em MP4.</div>
+      <div id="listaAssets" style="margin-top:8px">${(assets || []).map((a) => `<div class="ativo"><span class="tag s-fila">${ASSET[a.tipo]}</span><span style="flex:1">${esc(a.nome)}</span><span class="small mute">${a.tamanho ? (a.tamanho / 1048576).toFixed(1) + ' MB' : ''}</span><button type="button" class="btn sm red delAsset" data-id="${a.id}" data-path="${esc(a.storage_path)}">Remover</button></div>`).join('') || '<div class="small mute">Nenhum arquivo enviado.</div>'}</div>`
+      : '<p class="small mute">Depois de salvar, você poderá enviar logo, fontes e vinhetas.</p>'}
+    <div class="row" style="margin-top:18px"><span class="grow"></span><button class="btn acc">Salvar</button></div></form>`;
+  const f = $('#fCli');
+  const logoAsset = (assets || []).find((a) => a.id === k.logo_id);
+  if (logoAsset) sb.storage.from('marcas').createSignedUrl(logoAsset.storage_path, 3600).then(({ data }) => data && ($('#mockLogo').src = data.signedUrl));
+  const desenhar = () => {
+    const p = { cima: 'top:18%', meio: 'top:45%', baixo: 'bottom:16%' }[f.leg_posicao.value];
+    const dest = f.leg_destaque.value === 'principal' ? f.cor_principal.value : f.cor_secundaria.value;
+    let txt = 'É assim que a legenda vai aparecer no reel'; if (f.leg_maiusculas.checked) txt = txt.toUpperCase();
+    const ws = txt.split(' '), n = Math.max(1, Number(f.leg_palavras.value) || 3), linhas = [];
+    for (let i = 0; i < Math.min(ws.length, n * 2); i += n) linhas.push(ws.slice(i, i + n));
+    $('#mockLeg').style.cssText = p + ';font-family:' + (f.fonte_titulo.value ? `'${f.fonte_titulo.value}',` : '') + 'sans-serif';
+    $('#mockLeg').innerHTML = linhas.map((l, li) => `<div style="margin:3px 0"><span style="${f.leg_caixa.checked ? `background:${f.cor_fundo.value};` : 'text-shadow:0 2px 6px rgba(0,0,0,.6);'}color:${f.leg_caixa.checked ? f.cor_texto.value : '#fff'}">${l.map((w, wi) => li === 0 && wi === 1 ? `<span style="color:${dest}">${esc(w)}</span>` : esc(w)).join(' ')}</span></div>`).join('');
+  };
+  f.oninput = desenhar; desenhar();
+  f.onsubmit = async (e) => {
+    e.preventDefault();
+    const reg = { nome: f.nome.value.trim(), instagram: f.instagram.value.trim() || null, pasta_brutos_id: idDrive(f.brutos.value) || null, pasta_finalizados_id: idDrive(f.finalizados.value) || null,
+      tom_voz: f.tom.value.trim() || null, ctas: f.ctas.value.split('\n').map((x) => x.trim()).filter(Boolean), regras: f.regras.value.trim() || null, ativo: f.ativo.checked };
+    const r = id ? await sb.from('clients').update(reg).eq('id', id).select().single() : await sb.from('clients').insert(reg).select().single();
+    if (r.error) return toast('Erro: ' + r.error.message);
+    const kit = { client_id: r.data.id,
+      cores: { principal: f.cor_principal.value, secundaria: f.cor_secundaria.value, fundo: f.cor_fundo.value, texto: f.cor_texto.value },
+      fontes: { titulo: f.fonte_titulo.value.trim() || null, corpo: f.fonte_corpo.value.trim() || null },
+      estilo_legenda: { posicao: f.leg_posicao.value, destaque: f.leg_destaque.value, palavras: Number(f.leg_palavras.value) || 3, caixa: f.leg_caixa.checked, maiusculas: f.leg_maiusculas.checked } };
+    if (id) Object.assign(kit, { logo_id: f.logo_id.value || null, vinheta_abertura_id: f.vin_ab.value || null, vinheta_encerramento_id: f.vin_enc.value || null });
+    const rk = S.kits[r.data.id] ? await sb.from('brand_kits').update(kit).eq('client_id', r.data.id) : await sb.from('brand_kits').insert(kit);
+    if (rk.error) return toast('Cliente salvo, mas a identidade deu erro: ' + rk.error.message);
+    toast('Cliente salvo'); await carregarClientes(); renderClientes(); if (!id) abrirCliente(r.data.id);
+  };
+  if (id) {
+    $('#btnUp').onclick = async () => {
+      const arqs = [...$('#upArq').files]; if (!arqs.length) return toast('Escolha o arquivo');
+      const tipo = $('#upTipo').value; $('#btnUp').disabled = true;
+      for (const a of arqs) {
+        const path = `${S.perfil.org_id}/${id}/${Date.now()}-${a.name.normalize('NFD').replace(/[^\w.-]+/g, '_')}`;
+        const up = await sb.storage.from('marcas').upload(path, a, { contentType: a.type || undefined });
+        if (up.error) { toast('Erro no envio: ' + up.error.message); continue; }
+        const ins = await sb.from('brand_assets').insert({ client_id: id, tipo, nome: a.name, storage_path: path, mime: a.type, tamanho: a.size });
+        if (ins.error) toast('Erro: ' + ins.error.message);
+      }
+      $('#btnUp').disabled = false; toast('Arquivos enviados'); abrirCliente(id);
+    };
+    $$('.delAsset').forEach((b) => (b.onclick = async () => {
+      await sb.storage.from('marcas').remove([b.dataset.path]);
+      const { error } = await sb.from('brand_assets').delete().eq('id', b.dataset.id);
+      toast(error ? 'Erro: ' + error.message : 'Arquivo removido'); abrirCliente(id);
+    }));
+  }
+  if (!$('#dlg').open) $('#dlg').showModal();
+}
+
+// ================= Equipe (admin) =================
+async function renderEquipe() {
+  const [{ data: ps }, { data: cs }] = await Promise.all([sb.from('profiles').select('*').order('nome'), sb.from('convites').select('*').order('created_at')]);
+  const comLogin = new Set((ps || []).map((p) => p.email.toLowerCase()));
+  $('#conteudo').innerHTML = `<h2>Equipe</h2>
+    <div class="grid2">
+      <div class="box"><table><tr><th>Pessoa</th><th>Papel</th><th>Acesso</th></tr>
+        ${(ps || []).map((p) => `<tr><td>${esc(p.nome || '')}<div class="small mute">${esc(p.email)}</div></td>
+          <td><select class="papel" data-id="${p.id}" ${p.id === S.perfil.id ? 'disabled' : ''} style="width:auto">${['admin', 'editor'].map((x) => `<option ${p.papel === x ? 'selected' : ''}>${x}</option>`).join('')}</select></td>
+          <td>${p.id === S.perfil.id ? '<span class="small mute">você</span>' : `<label class="small"><input type="checkbox" class="ativoP" data-id="${p.id}" ${p.ativo ? 'checked' : ''}> ativo</label>`}</td></tr>`).join('')}</table></div>
+      <div class="box pad"><b>Liberar uma pessoa</b>
+        <form id="fConv"><label class="f">E-mail</label><input type="email" name="email" required><div class="grid2"><div><label class="f">Nome</label><input name="nome"></div><div><label class="f">Papel</label><select name="papel"><option value="editor">editor</option><option value="admin">admin</option></select></div></div>
+        <div class="row" style="margin-top:12px"><span class="grow"></span><button class="btn acc">Liberar</button></div></form>
+        <p class="small mute">Depois de liberar, crie o login em Supabase → Authentication → Add user (com o mesmo e-mail e uma senha) e envie a senha para a pessoa.</p>
+        ${(cs || []).filter((c) => !comLogin.has(c.email.toLowerCase())).map((c) => `<div class="ativo"><span style="flex:1">${esc(c.email)}</span><span class="tag s-voce">aguardando login</span><button class="btn sm red delConv" data-email="${esc(c.email)}">Remover</button></div>`).join('')}
+      </div>
+    </div>`;
+  $$('.papel').forEach((s) => (s.onchange = async () => { const { error } = await sb.from('profiles').update({ papel: s.value }).eq('id', s.dataset.id); toast(error ? 'Erro: ' + error.message : 'Papel alterado'); }));
+  $$('.ativoP').forEach((c) => (c.onchange = async () => { const { error } = await sb.from('profiles').update({ ativo: c.checked }).eq('id', c.dataset.id); toast(error ? 'Erro: ' + error.message : c.checked ? 'Acesso liberado' : 'Acesso bloqueado'); }));
+  $$('.delConv').forEach((b) => (b.onclick = async () => { await sb.from('convites').delete().eq('email', b.dataset.email); renderEquipe(); }));
+  $('#fConv').onsubmit = async (e) => {
+    e.preventDefault(); const f = e.target;
+    const { error } = await sb.from('convites').upsert({ email: f.email.value.trim().toLowerCase(), nome: f.nome.value.trim() || null, papel: f.papel.value, org_id: S.perfil.org_id });
+    toast(error ? 'Erro: ' + error.message : 'Liberado. Agora crie o login no Supabase.'); renderEquipe();
+  };
+}
+
+$('#dlg').addEventListener('close', () => { S.aberto = null; });
+iniciar();
+</script>
+</body>
+</html>

@@ -1,0 +1,17 @@
+{
+  "name": "link3-worker",
+  "version": "1.0.0",
+  "description": "Motor de edição Link3: fila de pedidos, Drive, render",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "test": "node --test test/*.test.js"
+  },
+  "license": "UNLICENSED",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.119.0",
+    "google-auth-library": "^11.3.4"
+  },
+  "type": "module",
+  "private": true
+}
