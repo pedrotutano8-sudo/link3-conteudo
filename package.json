@@ -1,0 +1,7 @@
+{
+  "name": "link3-conteudo",
+  "private": true,
+  "type": "module",
+  "scripts": { "test": "node tests/base.test.mjs && cd worker && npm test" },
+  "devDependencies": { "@electric-sql/pglite": "^0.5.15" }
+}
