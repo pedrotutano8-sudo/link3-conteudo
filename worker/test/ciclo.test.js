@@ -56,6 +56,16 @@ test('pedido de teste: Drive → logo → prévia → aprovado → Drive', async
   console.log('quadro:', path.join(tmp, 'quadro.png'));
 });
 
+test('sem pasta de finalizados: cria "Finalizados (sistema)" dentro da pasta do cliente', async () => {
+  const f = fakes(); let criou = null;
+  f.db.cliente = async () => ({ nome: 'Atha', pasta_brutos_id: 'pastaAtha', pasta_finalizados_id: null });
+  f.drive.pastaFilha = async (pai, nome) => { criou = [pai, nome]; return 'subpasta1'; };
+  const enviar = f.drive.enviar; let destino; f.drive.enviar = async (a, o) => { destino = o.pastaId; return enviar(a, o); };
+  const { processar } = criarEtapas({ db: f.db, drive: f.drive, workDir: path.join(tmp, 'work3'), log: () => {} });
+  assert.equal(await processar({ id: 'j9', org_id: 'o', client_id: 'c', numero: 2, tipo: 'reel', origem_drive_id: 'b', status: 'aprovado' }), 'entregue');
+  assert.deepEqual(criou, ['pastaAtha', 'Finalizados (sistema)']); assert.equal(destino, 'subpasta1');
+});
+
 test('erros claros: pasta no lugar do vídeo e carrossel antes do Módulo 2', async () => {
   const f = fakes(); f.drive.meta = async () => ({ name: 'Pasta', mimeType: 'application/vnd.google-apps.folder' });
   const { processar } = criarEtapas({ db: f.db, drive: f.drive, workDir: path.join(tmp, 'work2'), log: () => {} });

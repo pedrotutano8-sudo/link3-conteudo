@@ -64,11 +64,16 @@ export function criarEtapas({ db, drive, workDir, planejar = planejarBase, log =
     const e = await garantirBruto(job);
     await db.atualizar(job.id, 'entregando');
     const [cliente, kit] = await Promise.all([db.cliente(job.client_id), db.kit(job.client_id)]);
-    if (!cliente.pasta_finalizados_id) throw new Error('Cliente sem pasta de finalizados cadastrada');
+    // sem pasta de finalizados cadastrada: cria "Finalizados (sistema)" dentro da pasta do cliente
+    let destinoPasta = cliente.pasta_finalizados_id;
+    if (!destinoPasta) {
+      if (!cliente.pasta_brutos_id) throw new Error('Cliente sem pasta no Drive cadastrada');
+      destinoPasta = await drive.pastaFilha(cliente.pasta_brutos_id, 'Finalizados (sistema)');
+    }
     const final = path.join(pasta(job), 'final.mp4');
     await montarComLogo(e.bruto, final, { logo: await logoLocal(job, kit) });
     const nome = `${limpo(cliente.nome)} - ${job.numero} - ${limpo(path.parse(e.nome || job.origem_nome || 'reel').name)}.mp4`;
-    const arq = await drive.enviar(final, { nome, pastaId: cliente.pasta_finalizados_id });
+    const arq = await drive.enviar(final, { nome, pastaId: destinoPasta });
     await db.atualizar(job.id, 'entregue', { final_drive_id: arq.id }, `No Drive: ${nome}`);
     fs.rmSync(pasta(job), { recursive: true, force: true });
     return 'entregue';

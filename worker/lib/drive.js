@@ -38,6 +38,16 @@ export function criarDrive({ credentials, fetchFn = fetch, token } = {}) {
       await pipeline(Readable.fromWeb(r.body), fs.createWriteStream(destino));
       return destino;
     },
+    // acha (ou cria) uma subpasta pelo nome: usada para "Finalizados" dentro da pasta do cliente
+    async pastaFilha(paiId, nome) {
+      const q = encodeURIComponent(`'${paiId}' in parents and name = '${nome.replace(/'/g, "\\'")}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`);
+      const r = await req(`${API}/files?q=${q}&fields=files(id,name)&supportsAllDrives=true&includeItemsFromAllDrives=true`);
+      const achou = (await r.json()).files?.[0];
+      if (achou) return achou.id;
+      const c = await req(`${API}/files?supportsAllDrives=true&fields=id`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: nome, mimeType: 'application/vnd.google-apps.folder', parents: [paiId] }) });
+      return (await c.json()).id;
+    },
     // upload resumível: aguenta vídeos grandes
     async enviar(arquivo, { nome, pastaId, mime = 'video/mp4' }) {
       const ini = await req(`${UP}/files?uploadType=resumable&supportsAllDrives=true&fields=id,name`, {

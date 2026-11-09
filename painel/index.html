@@ -263,7 +263,7 @@ function renderClientes() {
       ${S.clientes.map((c) => { const k = S.kits[c.id]; const cores = k ? Object.values(k.cores || {}).filter(Boolean) : [];
         return `<tr class="click" data-id="${c.id}"><td><b>${esc(c.nome)}</b></td><td class="hide-sm">${esc(c.instagram || '')}</td>
         <td>${k ? cores.map((x) => `<span class="chip" style="background:${esc(x)}"></span>`).join(' ') + (k.logo_id ? ' <span class="small mute">· logo</span>' : ' <span class="small" style="color:var(--amber)">· sem logo</span>') : '<span class="small" style="color:var(--amber)">não cadastrada</span>'}</td>
-        <td class="hide-sm small">${c.pasta_brutos_id ? '✓ brutos' : '<span style="color:var(--amber)">falta brutos</span>'} · ${c.pasta_finalizados_id ? '✓ finalizados' : '<span style="color:var(--amber)">falta finalizados</span>'}</td>
+        <td class="hide-sm small">${c.pasta_brutos_id ? '✓ pasta do cliente' : '<span style="color:var(--amber)">falta a pasta do Drive</span>'}${c.pasta_finalizados_id ? ' · ✓ finalizados' : ''}</td>
         <td class="num">${S.jobs.filter((j) => j.client_id === c.id).length}</td><td>${c.ativo ? '<span class="tag s-ok">Ativo</span>' : '<span class="tag s-fila">Pausado</span>'}</td></tr>`; }).join('')}</table>`
       : '<div class="empty">Nenhum cliente cadastrado.</div>'}</div>`;
   $('#btnNovoCli').onclick = () => abrirCliente();
@@ -281,7 +281,7 @@ async function abrirCliente(id) {
   $('#dlgTitulo').textContent = id ? c.nome : 'Novo cliente';
   $('#dlgCorpo').innerHTML = `<form id="fCli">
     <div class="grid2"><div><label class="f">Nome</label><input name="nome" required value="${esc(c.nome)}"></div><div><label class="f">@ no Instagram</label><input name="instagram" value="${esc(c.instagram || '')}" placeholder="@cliente"></div></div>
-    <div class="grid2"><div><label class="f">Pasta de brutos no Drive</label><input name="brutos" value="${esc(c.pasta_brutos_id || '')}" placeholder="Link da pasta"></div><div><label class="f">Pasta de finalizados no Drive</label><input name="finalizados" value="${esc(c.pasta_finalizados_id || '')}" placeholder="Link da pasta"></div></div>
+    <div class="grid2"><div><label class="f">Pasta do cliente no Drive (onde ficam os brutos)</label><input name="brutos" value="${esc(c.pasta_brutos_id || '')}" placeholder="Link da pasta"></div><div><label class="f">Pasta de finalizados (opcional)</label><input name="finalizados" value="${esc(c.pasta_finalizados_id || '')}" placeholder="Vazio: o sistema cria “Finalizados (sistema)” na pasta do cliente"></div></div>
     <label class="f">Tom de voz (3 a 5 linhas)</label><textarea name="tom" placeholder="Direto, técnico, sem gíria, trata o público por você">${esc(c.tom_voz || '')}</textarea>
     <div class="grid2"><div><label class="f">CTAs padrão (um por linha)</label><textarea name="ctas" placeholder="Chama no WhatsApp&#10;Link na bio">${esc((c.ctas || []).join('\n'))}</textarea></div>
       <div><label class="f">O que nunca fazer</label><textarea name="regras" placeholder="Nunca usar vermelho; não falar preço">${esc(c.regras || '')}</textarea></div></div>
