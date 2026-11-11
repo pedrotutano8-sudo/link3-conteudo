@@ -3,7 +3,7 @@ services:
   n8n:
     image: docker.n8n.io/n8nio/n8n:latest
     restart: unless-stopped
-    ports: ["5678:5678"]
+    ports: ["${N8N_BIND:-0.0.0.0}:5678:5678"]   # https.sh troca pra 127.0.0.1 (só o Caddy acessa)
     env_file: n8n.env
     volumes: [n8n_data:/home/node/.n8n]
 
@@ -14,6 +14,14 @@ services:
     volumes: [work:/work]
     profiles: ["worker"]   # só sobe com: docker compose --profile worker up -d (depois de preencher worker.env)
 
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    volumes: [./Caddyfile:/etc/caddy/Caddyfile:ro, caddy_data:/data]
+    profiles: ["https"]    # sobe com: bash https.sh n8n.seudominio.com.br
+
 volumes:
+  caddy_data:
   n8n_data:
   work:
