@@ -17,7 +17,32 @@ export function ehVicio(p) {
  * @param {number} [o.respiro=0.12] folga mantida antes/depois da fala
  * @param {boolean} [o.tirarVicios=true] corta "éé", "ahn", "hum"
  */
-export function calcularCortes(palavras, { duracao, pausa = 0.35, respiro = 0.1, tirarVicios = true, silencios = [], silencioMin = 0.3, folga = 0.08 } = {}) {
+// núcleo da palavra (a transcrição acerta o início e costuma esticar o fim): silêncio do áudio nunca corta aqui
+const nucleo = (w) => [w.i, w.i + Math.min(w.f - w.i, Math.max(0.22, 0.07 * String(w.p).length + 0.1))];
+
+function subtrair(trechos, cortes, { minimo = 0, folga = 0 } = {}) {
+  const saida = [];
+  const lista = cortes.filter(([a, b]) => b - a >= minimo).map(([a, b]) => [a + folga, b - folga]).filter(([a, b]) => b > a).sort((x, y) => x[0] - y[0]);
+  for (const [a, b] of trechos) {
+    let ini = a;
+    for (const [c0, c1] of lista) {
+      if (c1 <= ini || c0 >= b) continue;
+      if (c0 - ini > 0.05) saida.push([ini, c0]);
+      ini = Math.max(ini, c1);
+    }
+    if (b - ini > 0.05) saida.push([ini, b]);
+  }
+  return saida;
+}
+
+// silêncios do áudio sem os núcleos das palavras
+function silenciosLivres(silencios, fala, duracao) {
+  let livres = silencios.map(([a, b]) => [a, Number.isFinite(b) ? b : duracao ?? a + 1000]);
+  const nucleos = fala.map(nucleo);
+  return livres.flatMap(([a, b]) => subtrair([[a, b]], nucleos));
+}
+
+export function calcularCortes(palavras, { duracao, pausa = 0.35, respiro = 0.1, tirarVicios = true, silencios = [], silencioMin = 0.3, folga = 0.08, cortesForcados = [] } = {}) {
   const fala = (palavras || [])
     .filter((w) => Number.isFinite(w.i) && Number.isFinite(w.f) && w.f >= w.i)
     .filter((w) => !(tirarVicios && ehVicio(w.p)))
@@ -44,19 +69,11 @@ export function calcularCortes(palavras, { duracao, pausa = 0.35, respiro = 0.1,
     else juntos.push([...t]);
   }
   // silêncio medido no áudio dentro da fala (a transcrição costuma "esticar" as palavras por cima das pausas)
-  const semSilencio = [];
-  for (const [a, b] of juntos) {
-    let ini = a;
-    for (const [s0, s1] of silencios.filter(([x, y]) => Math.min(y, duracao ?? y) - x >= silencioMin).sort((x, y) => x[0] - y[0])) {
-      const c0 = Math.max(s0 + folga, ini), c1 = Math.min((Number.isFinite(s1) ? s1 : b) - folga, b);
-      if (c1 - c0 < silencioMin - 2 * folga || c0 >= b || c1 <= ini) continue;
-      if (c0 - ini > 0.05) semSilencio.push([ini, c0]);
-      ini = c1;
-    }
-    if (b - ini > 0.05) semSilencio.push([ini, b]);
-  }
+  const semSilencio = subtrair(juntos, silenciosLivres(silencios, fala, duracao), { minimo: silencioMin, folga });
+  // trechos que a revisão mandou tirar (repetição, muleta, recomeço) saem sem folga
+  const semForcados = subtrair(semSilencio, cortesForcados);
   const arred = (x) => Math.round(x * 1000) / 1000;
-  const final = semSilencio.map(([a, b]) => [arred(a), arred(b)]).filter(([a, b]) => b - a > 0.08);
+  const final = semForcados.map(([a, b]) => [arred(a), arred(b)]).filter(([a, b]) => b - a > 0.08);
 
   // tempo no vídeo cortado
   const inicioNoCorte = [];

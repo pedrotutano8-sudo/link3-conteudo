@@ -36,8 +36,10 @@ export async function transcrever(audio, { fetchImpl = fetch, dica = '' } = {}) 
   });
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(`Transcrição falhou (${r.status}): ${j.error?.message || 'sem detalhe'}`);
-  const palavras = (j.words || []).map((w) => ({ p: String(w.word).trim(), i: Number(w.start), f: Number(w.end) })).filter((w) => w.p);
-  return { texto: j.text || palavras.map((w) => w.p).join(' '), palavras, segundos: Number(j.duration) || 0 };
+  // "ÔQue": o modelo às vezes gruda um "Ô" no começo da palavra (respiração no início do take)
+  const limpar = (p) => String(p).trim().replace(/^Ô(?=[A-ZÁÉÍÓÚÂÊÔÃÕÇ])/, '');
+  const palavras = (j.words || []).map((w) => ({ p: limpar(w.word), i: Number(w.start), f: Number(w.end) })).filter((w) => w.p);
+  return { texto: palavras.map((w) => w.p).join(' ') || j.text || '', palavras, segundos: Number(j.duration) || 0 };
 }
 
 const PROMPT = `Você edita reels para uma agência de marketing. Recebe a transcrição palavra a palavra (numerada) de um vídeo bruto gravado pelo cliente e devolve:
@@ -46,9 +48,9 @@ const PROMPT = `Você edita reels para uma agência de marketing. Recebe a trans
   · takes repetidos: quando a pessoa repete a mesma frase, fica só a última versão completa e sem erro;
   · recomeços dentro da frase: "eu entrei, eu entrei aqui na GNX" → remova o primeiro "eu entrei";
   · palavras repetidas e gaguejadas: "a a gente", "que que", "na na";
-  · hesitações e muletas que não fazem falta: "éé", "hum", "ahn", "tipo", "né", "então" e "assim" soltos no meio da fala, "enfim" usado para ganhar tempo;
+  · hesitações e muletas que não fazem falta: "éé", "é..." de hesitação, "hum", "ahn", "tipo", "né", "aí", "tá?", "então" e "assim" soltos no meio da fala, "enfim" usado para ganhar tempo;
   · trechos em que a pessoa está claramente pensando no que dizer ou se perde e retoma.
-  Não remova conteúdo que faz sentido nem quebre uma frase no meio. Se não houver nada, devolva [].
+  Nunca remova uma palavra que carrega sentido (substantivo, verbo principal, número, nome): a frase que fica tem que continuar correta e completa. Se não houver nada, devolva [].
 - "corrigir": palavras que a transcrição escreveu errado (nome da marca, de pessoas, termos técnicos, siglas), como lista de pares [número, "como escrever"]. Use as informações da marca e o roteiro como referência. Se estiver tudo certo, devolva [].
 - "titulo": gancho curto para aparecer no topo nos primeiros segundos (máx. 6 palavras, sem emoji, sem aspas, sem promessa que o vídeo não cumpre). Use o assunto real da fala que fica no vídeo.
 - "copy": legenda do post no Instagram no tom de voz da marca: 1ª linha que prende, 2 a 5 frases curtas, um CTA da lista da marca (se houver) e até 5 hashtags do assunto ou da marca do cliente.
@@ -75,7 +77,7 @@ export async function gancoECopy({ texto, palavras = null, cliente = {}, comando
     method: 'POST',
     headers: { 'x-api-key': config.anthropicKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
     body: JSON.stringify({
-      model: config.modeloClaude, max_tokens: 1200, system: PROMPT,
+      model: config.modeloClaude, max_tokens: 4000, system: PROMPT,
       messages: [{ role: 'user', content: `${marca}\n\n${pedido}\n\nTranscrição numerada:\n${palavras ? palavras.map((w, k) => `${k}:${w.p}`).join(' ') : texto}` }],
     }),
   });
@@ -136,4 +138,31 @@ export async function agruparPorRoteiro({ roteiros, videos, cliente = {}, comand
     reels, sobras: videos.map((v) => v.n).filter((n) => !usados.has(n)),
     tokens: { entrada: ent, saida: sai }, usd: (ent * config.precoClaudeEntrada + sai * config.precoClaudeSaida) / 1e6,
   };
+}
+
+const PROMPT_REVISAO = `Você é o revisor final de um editor de reels. Recebe a fala JÁ EDITADA de um vídeo, palavra a palavra e numerada, exatamente como vai ao ar.
+Marque o que ainda faz o vídeo parecer amador e deve sair: palavras repetidas ("pela, pela"), recomeços ("eu, eu", "a gente, eu atualmente"), hesitações ("é...", "éé", "hum", "ahn"), muletas soltas ("né", "aí", "tá?", "tipo", "então", "assim") e trechos em que a pessoa se perde.
+Nunca marque uma palavra que carrega sentido: a frase que fica tem que continuar correta e completa. Na dúvida, não marque.
+Responda só com JSON: {"remover": [[primeira, ultima]]}`;
+
+export async function revisarFala({ palavras }, { fetchImpl = fetch } = {}) {
+  if (!config.anthropicKey) throw new Error('ANTHROPIC_API_KEY não configurada no worker');
+  const r = await comRetentativa(fetchImpl, 'https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'x-api-key': config.anthropicKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+    body: JSON.stringify({ model: config.modeloClaude, max_tokens: 2000, system: PROMPT_REVISAO,
+      messages: [{ role: 'user', content: palavras.map((w, k) => `${k}:${w.p}`).join(' ') }] }),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(`Claude falhou na revisão (${r.status}): ${j.error?.message || 'sem detalhe'}`);
+  const bruto = (j.content || []).filter((c) => c.type === 'text').map((c) => c.text).join('');
+  const m = bruto.match(/\{[\s\S]*\}/);
+  let saida = {};
+  try { saida = JSON.parse(m ? m[0] : bruto); } catch { saida = {}; }
+  const n = palavras.length;
+  const remover = (Array.isArray(saida.remover) ? saida.remover : [])
+    .map((x) => (Array.isArray(x) ? [Number(x[0]), Number(x[1] ?? x[0])] : [Number(x), Number(x)]))
+    .filter(([a, b]) => Number.isInteger(a) && Number.isInteger(b) && a >= 0 && b >= a && b < n);
+  const ent = j.usage?.input_tokens || 0, sai = j.usage?.output_tokens || 0;
+  return { remover, tokens: { entrada: ent, saida: sai }, usd: (ent * config.precoClaudeEntrada + sai * config.precoClaudeSaida) / 1e6 };
 }

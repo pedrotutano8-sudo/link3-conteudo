@@ -5,7 +5,7 @@ import path from 'node:path';
 import { config } from './config.js';
 import { calcularCortes } from './cortes.js';
 import * as iaPadrao from './ia.js';
-import { detectarSilencios } from './midia.js';
+import { detectarSilencios, audioEditado } from './midia.js';
 
 export function criarPlanejadorM1({ ia = iaPadrao } = {}) {
   return async function planejarM1({ job, cliente, kit, info, ajuste, roteiroAnterior, bruto, pasta }) {
@@ -36,7 +36,33 @@ export function criarPlanejadorM1({ ia = iaPadrao } = {}) {
     }
     const mantidas = certas.filter((_, k) => !fora.has(k));
     const { silencios } = info.temAudio ? await detectarSilencios(bruto).catch(() => ({ silencios: [] })) : { silencios: [] };
-    const cortes = calcularCortes(mantidas, { duracao: info.duracao, pausa: config.pausaMax, silencios });
+    let cortes = calcularCortes(mantidas, { duracao: info.duracao, pausa: config.pausaMax, silencios });
+
+    // revisão: transcreve a fala JÁ editada (pega gagueira que a 1ª transcrição "limpou") e o Claude marca o que ainda sobra
+    let revisado = [];
+    if (config.revisao && ia.revisarFala && cortes.trechos.length && cortes.duracaoFinal > 3) {
+      try {
+        const aud = await audioEditado(bruto, cortes.trechos, path.join(pasta, 'revisao.mp3'));
+        const t2 = await ia.transcrever(aud, { dica: [cliente?.nome, job.comando].filter(Boolean).join('. ') });
+        fs.rmSync(aud, { force: true });
+        custo.segundos_audio += t2.segundos || cortes.duracaoFinal;
+        custo.custo_ia_usd += ((t2.segundos || cortes.duracaoFinal) / 60) * 0.006;
+        const rv = await ia.revisarFala({ palavras: t2.palavras });
+        custo.custo_ia_usd += rv.usd; custo.tokens_entrada += rv.tokens.entrada; custo.tokens_saida += rv.tokens.saida;
+        if (rv.remover.length) {
+          // tempo da fala editada → tempo do bruto
+          const inicios = []; let acc = 0;
+          for (const [a, b] of cortes.trechos) { inicios.push(acc); acc += b - a; }
+          const paraBruto = (t) => {
+            for (let k = cortes.trechos.length - 1; k >= 0; k--) if (t >= inicios[k] - 1e-6) return cortes.trechos[k][0] + Math.min(t - inicios[k], cortes.trechos[k][1] - cortes.trechos[k][0]);
+            return cortes.trechos[0][0];
+          };
+          const forcados = rv.remover.map(([a, b]) => [paraBruto(t2.palavras[a].i - 0.02), paraBruto(t2.palavras[b].f + 0.02)]);
+          revisado = rv.remover.map(([a, b]) => t2.palavras.slice(a, b + 1).map((w) => w.p).join(' '));
+          cortes = calcularCortes(mantidas, { duracao: info.duracao, pausa: config.pausaMax, silencios, cortesForcados: forcados });
+        }
+      } catch (e) { revisado = [`(revisão não rodou: ${e.message.slice(0, 80)})`]; }
+    }
     // conferência: palavra repetida colada que sobrou (sinal de gagueira não cortada)
     const norm = (p) => p.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
     const repetidas = cortes.palavras.filter((w, k, a) => k > 0 && norm(w.p) && norm(w.p) === norm(a[k - 1].p)).map((w) => w.p);
@@ -55,7 +81,7 @@ export function criarPlanejadorM1({ ia = iaPadrao } = {}) {
         duracao_final: cortes.duracaoFinal,
         segundos_cortados: cortes.cortado,
         removido: (g.remover || []).map(([a, b]) => transcricao.palavras.slice(a, b + 1).map((w) => w.p).join(' ')),
-        qa: { silencios_cortados: silencios.length, repetidas_restantes: repetidas },
+        qa: { silencios_cortados: silencios.length, repetidas_restantes: repetidas, revisao: revisado },
         transcricao,
         formato: '1080x1920',
         logo: Boolean(kit?.logo_id),

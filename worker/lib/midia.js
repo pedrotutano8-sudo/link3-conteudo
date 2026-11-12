@@ -109,3 +109,11 @@ export async function juntarBrutos(arquivos, saida) {
   await rodar(config.ffmpeg, args);
   return saida;
 }
+
+// só o áudio da edição (rápido): usado na revisão da fala antes do render
+export async function audioEditado(entrada, trechos, saida) {
+  const partes = trechos.map(([a, b], k) => `[0:a]atrim=start=${a}:end=${b},asetpts=PTS-STARTPTS[a${k}]`);
+  partes.push(`${trechos.map((_, k) => `[a${k}]`).join('')}concat=n=${trechos.length}:v=0:a=1,aresample=16000,pan=mono|c0=c0[s]`);
+  await rodar(config.ffmpeg, ['-y', '-i', entrada, '-filter_complex', partes.join(';'), '-map', '[s]', '-b:a', '48k', saida]);
+  return saida;
+}
