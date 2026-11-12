@@ -71,7 +71,7 @@ test('Módulo 1 ponta a ponta: Drive → transcrição → cortes + legenda + ga
   const ia = {
     extrairAudio: async (v, d) => { await rodar('ffmpeg', ['-y', '-i', v, '-vn', '-ac', '1', '-ar', '16000', d]); return d; },
     transcrever: async () => { transcricoes++; return { texto: palavrasFake.map((w) => w.p).join(' '), palavras: palavrasFake, segundos: 8 }; },
-    gancoECopy: async (a) => { chamadasClaude.push(a); return { titulo: a.ajuste ? 'Erros de clareamento' : '3 erros de clareamento', copy: 'Você comete esses erros?\nAgende pelo link da bio', tokens: { entrada: 900, saida: 120 }, usd: 0.0045 }; },
+    gancoECopy: async (a) => { chamadasClaude.push(a); return { remover: a.ajuste ? [] : [[1, 2]], titulo: a.ajuste ? 'Erros de clareamento' : '3 erros de clareamento', copy: 'Você comete esses erros?\nAgende pelo link da bio', tokens: { entrada: 900, saida: 120 }, usd: 0.0045 }; },
   };
 
   const { processar } = criarEtapas({ db, drive, workDir: path.join(tmp, 'work'), planejar: criarPlanejadorM1({ ia }), log: () => {} });
@@ -82,12 +82,15 @@ test('Módulo 1 ponta a ponta: Drive → transcrição → cortes + legenda + ga
   const roteiro = rend.campos.roteiro;
   assert.equal(roteiro.versao, 'm1');
   assert.equal(roteiro.titulo, '3 erros de clareamento');
-  assert.equal(roteiro.trechos.length, 2);
+  assert.equal(roteiro.trechos.length, 3);
+  assert.deepStrictEqual(roteiro.removido, ['eu vou']);
+  assert.ok(!roteiro.palavras.some((w) => w.p === 'vou'));
+  assert.ok(chamadasClaude[0].palavras.length === 9);
   assert.ok(rend.campos.segundos_audio === 8 && rend.campos.tokens_entrada === 900);
   const [prev] = fs.readdirSync(previas);
   const ip = await medir(path.join(previas, prev));
   assert.equal(ip.largura, 540); assert.equal(ip.altura, 960);
-  assert.ok(Math.abs(ip.duracao - 3.28) < 0.15, `prévia com ${ip.duracao}s`);
+  assert.ok(Math.abs(ip.duracao - 3.02) < 0.15, `prévia com ${ip.duracao}s`);
 
   // ajuste: não transcreve de novo, manda o pedido pro Claude
   job.roteiro = roteiro; job.status = 'ajuste_pedido';

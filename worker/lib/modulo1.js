@@ -22,8 +22,12 @@ export function criarPlanejadorM1({ ia = iaPadrao } = {}) {
       custo.custo_ia_usd += (custo.segundos_audio / 60) * 0.006;
     }
 
-    const cortes = calcularCortes(transcricao.palavras, { duracao: info.duracao, pausa: config.pausaMax });
-    const g = await ia.gancoECopy({ texto: transcricao.texto, cliente, comando: job.comando, ajuste, anterior: roteiroAnterior });
+    const g = await ia.gancoECopy({ texto: transcricao.texto, palavras: transcricao.palavras, cliente, comando: job.comando, ajuste, anterior: roteiroAnterior });
+    // erros de gravação e takes repetidos saem antes do corte de pausas (viram silêncio e são cortados junto)
+    const fora = new Set();
+    for (const [a, b] of g.remover || []) for (let k = a; k <= b; k++) fora.add(k);
+    const mantidas = transcricao.palavras.filter((_, k) => !fora.has(k));
+    const cortes = calcularCortes(mantidas, { duracao: info.duracao, pausa: config.pausaMax });
     custo.custo_ia_usd += g.usd;
     custo.tokens_entrada += g.tokens.entrada;
     custo.tokens_saida += g.tokens.saida;
@@ -38,6 +42,7 @@ export function criarPlanejadorM1({ ia = iaPadrao } = {}) {
         duracao_bruto: info.duracao,
         duracao_final: cortes.duracaoFinal,
         segundos_cortados: cortes.cortado,
+        removido: (g.remover || []).map(([a, b]) => transcricao.palavras.slice(a, b + 1).map((w) => w.p).join(' ')),
         transcricao,
         formato: '1080x1920',
         logo: Boolean(kit?.logo_id),

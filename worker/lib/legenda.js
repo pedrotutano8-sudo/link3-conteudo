@@ -56,11 +56,11 @@ export function gerarAss({ palavras = [], duracao, kit = {}, fonte = 'DejaVu San
   const margemV = est.posicao === 'baixo' ? 420 : est.posicao === 'cima' ? 360 : 0;
 
   const linhas = [
-    '[Script Info]', 'ScriptType: v4.00+', 'PlayResX: 1080', 'PlayResY: 1920', 'WrapStyle: 2', 'ScaledBorderAndShadow: yes', '',
+    '[Script Info]', 'ScriptType: v4.00+', 'PlayResX: 1080', 'PlayResY: 1920', 'WrapStyle: 0', 'ScaledBorderAndShadow: yes', '',
     '[V4+ Styles]',
     'Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding',
-    `Style: Legenda,${fonte},86,${texto},${texto},&H00000000,${fundoCaixa},-1,0,0,0,100,100,0,0,${caixa},${caixa === 3 ? 18 : 7},0,${alinhamento},80,80,${margemV},1`,
-    `Style: Titulo,${fonte},72,${textoTitulo},${textoTitulo},${fundoTitulo},${fundoTitulo},-1,0,0,0,100,100,0,0,3,22,0,8,90,90,230,1`,
+    `Style: Legenda,${fonte},74,${texto},${texto},&H00000000,${fundoCaixa},-1,0,0,0,100,100,0,0,${caixa},${caixa === 3 ? 18 : 7},0,${alinhamento},90,90,${margemV},1`,
+    `Style: Titulo,${fonte},60,${textoTitulo},${textoTitulo},${fundoTitulo},${fundoTitulo},-1,0,0,0,100,100,0,0,3,20,0,8,110,110,230,1`,
     '', '[Events]', 'Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text',
   ];
 

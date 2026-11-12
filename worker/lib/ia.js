@@ -27,13 +27,14 @@ export async function transcrever(audio, { fetchImpl = fetch } = {}) {
   return { texto: j.text || palavras.map((w) => w.p).join(' '), palavras, segundos: Number(j.duration) || 0 };
 }
 
-const PROMPT = `Você edita reels para uma agência de marketing. Recebe a transcrição de um vídeo já gravado pelo cliente e devolve:
-- "titulo": gancho curto para aparecer no topo nos primeiros 3 segundos (máx. 7 palavras, sem emoji, sem aspas, sem promessa que o vídeo não cumpre). Use o assunto real da fala.
-- "copy": legenda do post no Instagram, no tom de voz da marca: 1ª linha que prende, 2 a 5 frases curtas, um CTA da lista da marca (se houver) e até 5 hashtags no fim.
-Siga as regras da marca. Nunca invente preço, prazo, dado ou nome que não esteja na fala ou nas informações da marca.
-Responda só com JSON: {"titulo": "...", "copy": "..."}`;
+const PROMPT = `Você edita reels para uma agência de marketing. Recebe a transcrição palavra a palavra (numerada) de um vídeo bruto gravado pelo cliente e devolve:
+- "remover": trechos que não podem ir ao ar, como lista de pares [primeira, ultima] com os números das palavras. Remova: erros de gravação e comentários fora do roteiro ("ai, não ficou bom", "corta", "de novo", "espera"), frases começadas e abandonadas que são repetidas logo depois (fica só a última versão completa) e conversa com quem está filmando. Não remova conteúdo bom. Se não houver nada, devolva [].
+- "titulo": gancho curto para aparecer no topo nos primeiros segundos (máx. 6 palavras, sem emoji, sem aspas, sem promessa que o vídeo não cumpre). Use o assunto real da fala que fica no vídeo.
+- "copy": legenda do post no Instagram no tom de voz da marca: 1ª linha que prende, 2 a 5 frases curtas, um CTA da lista da marca (se houver) e até 5 hashtags do assunto ou da marca do cliente.
+A copy é do cliente: nunca cite a agência, quem editou ou o pedido interno da equipe. Siga as regras da marca. Nunca invente preço, prazo, dado ou nome que não esteja na fala ou nas informações da marca.
+Responda só com JSON: {"remover": [[0, 3]], "titulo": "...", "copy": "..."}`;
 
-export async function gancoECopy({ texto, cliente = {}, comando = '', ajuste = '', anterior = null }, { fetchImpl = fetch } = {}) {
+export async function gancoECopy({ texto, palavras = null, cliente = {}, comando = '', ajuste = '', anterior = null }, { fetchImpl = fetch } = {}) {
   if (!config.anthropicKey) throw new Error('ANTHROPIC_API_KEY não configurada no worker');
   const marca = [
     `Marca: ${cliente.nome || '-'}`,
@@ -53,7 +54,7 @@ export async function gancoECopy({ texto, cliente = {}, comando = '', ajuste = '
     headers: { 'x-api-key': config.anthropicKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
     body: JSON.stringify({
       model: config.modeloClaude, max_tokens: 1200, system: PROMPT,
-      messages: [{ role: 'user', content: `${marca}\n\n${pedido}\n\nTranscrição:\n${texto}` }],
+      messages: [{ role: 'user', content: `${marca}\n\n${pedido}\n\nTranscrição numerada:\n${palavras ? palavras.map((w, k) => `${k}:${w.p}`).join(' ') : texto}` }],
     }),
   });
   const j = await r.json().catch(() => ({}));
@@ -63,7 +64,12 @@ export async function gancoECopy({ texto, cliente = {}, comando = '', ajuste = '
   let saida;
   try { saida = JSON.parse(m ? m[0] : bruto); } catch { throw new Error('Claude não devolveu JSON válido'); }
   const ent = j.usage?.input_tokens || 0, sai = j.usage?.output_tokens || 0;
+  const n = palavras?.length || 0;
+  const remover = (Array.isArray(saida.remover) ? saida.remover : [])
+    .map((r) => (Array.isArray(r) ? [Number(r[0]), Number(r[1] ?? r[0])] : [Number(r), Number(r)]))
+    .filter(([a, b]) => Number.isInteger(a) && Number.isInteger(b) && a >= 0 && b >= a && b < n);
   return {
+    remover,
     titulo: String(saida.titulo || '').trim(), copy: String(saida.copy || '').trim(),
     tokens: { entrada: ent, saida: sai },
     usd: (ent * config.precoClaudeEntrada + sai * config.precoClaudeSaida) / 1e6,
