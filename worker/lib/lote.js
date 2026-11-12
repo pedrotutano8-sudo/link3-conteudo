@@ -22,7 +22,8 @@ async function emParalelo(itens, n, fn) {
 
 export function criarLote({ db, drive, workDir, ia = iaPadrao, log = console.log }) {
   return async function processarLote(job) {
-    const dir = path.join(workDir, job.id); fs.mkdirSync(dir, { recursive: true });
+    // pasta própria por tentativa: uma tentativa anterior que falhou não apaga arquivos desta
+    const dir = path.join(workDir, job.id, String(Date.now())); fs.mkdirSync(dir, { recursive: true });
     if (!job.origem_drive_id) throw new Error('Lote sem pasta do Drive');
     await db.atualizar(job.id, 'baixando');
     const meta = await drive.meta(job.origem_drive_id);
@@ -49,6 +50,7 @@ export function criarLote({ db, drive, workDir, ia = iaPadrao, log = console.log
     // transcrição de cada bruto
     const custo = { custo_ia_usd: 0, tokens_entrada: 0, tokens_saida: 0, segundos_audio: 0 };
     let feitos = 0;
+    const falhas = [];
     const lista = await emParalelo(videos, 3, async (v, k) => {
       const local = path.join(dir, `v${k}${path.extname(v.name) || '.mov'}`), audio = path.join(dir, `v${k}.mp3`);
       try {
@@ -61,12 +63,18 @@ export function criarLote({ db, drive, workDir, ia = iaPadrao, log = console.log
           fala = t.texto; custo.segundos_audio += t.segundos || info.duracao;
         }
         return { n: k + 1, id: v.id, nome: v.name, duracao: info.duracao, fala };
+      } catch (e) {
+        // um vídeo com problema não derruba o lote: entra sem fala e fica registrado
+        falhas.push(`${v.name}: ${e.message.slice(0, 80)}`);
+        return { n: k + 1, id: v.id, nome: v.name, duracao: 0, fala: '', erro: true };
       } finally {
         fs.rmSync(local, { force: true }); fs.rmSync(audio, { force: true });
         if (++feitos % 5 === 0 || feitos === videos.length) await db.atualizar(job.id, 'preparando', {}, `Transcritos ${feitos} de ${videos.length}`).catch(() => {});
       }
     });
     custo.custo_ia_usd += (custo.segundos_audio / 60) * 0.006;
+    if (falhas.length === videos.length) throw new Error(`Nenhum vídeo foi transcrito (${falhas[0]})`);
+    if (falhas.length) await db.atualizar(job.id, 'preparando', {}, `${falhas.length} vídeo(s) sem transcrição: ${falhas.slice(0, 3).join(' · ')}`);
 
     await db.atualizar(job.id, 'planejando');
     const cliente = await db.cliente(job.client_id);
@@ -95,7 +103,7 @@ export function criarLote({ db, drive, workDir, ia = iaPadrao, log = console.log
       videos: lista.map((v) => ({ nome: v.nome, duracao: Math.round(v.duracao || 0), fala: (v.fala || '').slice(0, 400) })),
     };
     await db.atualizar(job.id, 'entregue', { roteiro: resumo, ...custo }, `${criados.length} pedidos de reel criados (#${criados.map((c) => c.numero).join(', #')})`);
-    fs.rmSync(dir, { recursive: true, force: true });
+    fs.rmSync(path.dirname(dir), { recursive: true, force: true });
     log(`lote #${job.numero}: ${criados.length} reels, ${g.sobras.length} vídeos sem roteiro`);
     return 'entregue';
   };

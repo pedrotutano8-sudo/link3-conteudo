@@ -4,6 +4,15 @@ import path from 'node:path';
 import { config } from './config.js';
 import { rodar } from './midia.js';
 
+// chamada com nova tentativa quando a API está ocupada (429, 5xx, 529)
+export async function comRetentativa(fetchImpl, url, opts, tentativas = 4) {
+  for (let k = 1; ; k++) {
+    const r = await fetchImpl(url, opts);
+    if (r.ok || k >= tentativas || ![408, 409, 429, 500, 502, 503, 504, 529].includes(r.status)) return r;
+    await new Promise((ok) => setTimeout(ok, 2000 * 2 ** (k - 1)));
+  }
+}
+
 // áudio mono 16 kHz em mp3: ~0,35 MB por minuto (limite da API: 25 MB)
 export async function extrairAudio(video, destino) {
   await rodar(config.ffmpeg, ['-y', '-i', video, '-vn', '-ac', '1', '-ar', '16000', '-b:a', '48k', destino]);
@@ -20,7 +29,7 @@ export async function transcrever(audio, { fetchImpl = fetch, dica = '' } = {}) 
   fd.append('timestamp_granularities[]', 'word');
   // nomes e termos da marca/roteiro: ajuda a escrever certo (ex.: "GNX Group", não "gene X")
   if (dica) fd.append('prompt', dica.slice(0, 800));
-  const r = await fetchImpl('https://api.openai.com/v1/audio/transcriptions', {
+  const r = await comRetentativa(fetchImpl, 'https://api.openai.com/v1/audio/transcriptions', {
     method: 'POST', headers: { Authorization: `Bearer ${config.openaiKey}` }, body: fd,
   });
   const j = await r.json().catch(() => ({}));
@@ -53,7 +62,7 @@ export async function gancoECopy({ texto, palavras = null, cliente = {}, comando
     anterior && `Versão anterior: ${JSON.stringify({ titulo: anterior.titulo, copy: anterior.copy })}`,
     ajuste && `Ajuste pedido agora (aplique só isso): ${ajuste}`,
   ].filter(Boolean).join('\n');
-  const r = await fetchImpl('https://api.anthropic.com/v1/messages', {
+  const r = await comRetentativa(fetchImpl, 'https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'x-api-key': config.anthropicKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
     body: JSON.stringify({
@@ -92,7 +101,7 @@ Responda só com JSON: {"reels": [{"titulo": "nome curto do roteiro", "roteiro":
 export async function agruparPorRoteiro({ roteiros, videos, cliente = {}, comando = '' }, { fetchImpl = fetch } = {}) {
   if (!config.anthropicKey) throw new Error('ANTHROPIC_API_KEY não configurada no worker');
   const lista = videos.map((v) => `#${v.n} ${v.nome} (${Math.round(v.duracao || 0)} s): ${v.fala ? v.fala : '[sem fala]'}`).join('\n');
-  const r = await fetchImpl('https://api.anthropic.com/v1/messages', {
+  const r = await comRetentativa(fetchImpl, 'https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: { 'x-api-key': config.anthropicKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
     body: JSON.stringify({

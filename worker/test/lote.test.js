@@ -106,3 +106,14 @@ test('reel com vários takes: baixa todos, junta e segue o fluxo normal', async 
   const i = await medir(path.join(previas, 'p.mp4'));
   assert.ok(Math.abs(i.duracao - 2.5) < 0.2, `duração ${i.duracao}`);
 });
+
+test('retentativa: API ocupada (503) tenta de novo e segue', async () => {
+  const { comRetentativa } = await import('../lib/ia.js');
+  let n = 0;
+  const f = async () => (++n < 2 ? new Response('{}', { status: 503 }) : Response.json({ ok: 1 }));
+  const r = await comRetentativa(f, 'x', {}, 3);
+  assert.equal(r.status, 200); assert.equal(n, 2);
+  let m = 0;
+  const g = async () => { m++; return new Response('{}', { status: 400 }); };
+  assert.equal((await comRetentativa(g, 'x', {}, 3)).status, 400); assert.equal(m, 1);
+});
