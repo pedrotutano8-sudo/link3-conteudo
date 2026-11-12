@@ -1,9 +1,10 @@
 // Ciclo de um pedido. Cada etapa avança o status no banco (o painel acompanha ao vivo).
 // Etapa 0 (Base): baixa o bruto do Drive, aplica o logo da marca e devolve na pasta de finalizados.
-// No Módulo 1 entram aqui a transcrição (preparar) e o roteiro do Claude (planejar).
+// Módulo 1 (planejarM1): transcrição, corte de pausas, legenda dinâmica, gancho e copy.
 import fs from 'node:fs';
 import path from 'node:path';
-import { medir, montarComLogo } from './midia.js';
+import { medir, montarComLogo, montarEdicao, rodar } from './midia.js';
+import { gerarAss } from './legenda.js';
 
 const extensao = (nome, mime) => path.extname(nome || '') || ({ 'video/quicktime': '.mov', 'video/mp4': '.mp4' }[mime] || '.mp4');
 const limpo = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\w.-]+/g, ' ').trim();
@@ -44,16 +45,40 @@ export function criarEtapas({ db, drive, workDir, planejar = planejarBase, log =
     return destino;
   }
 
+  // fonte da marca: asset enviado (ttf/otf) → pasta do pedido; nome da família lido com fc-scan
+  async function fonteLocal(job, kit) {
+    const ref = kit?.fontes?.corpo || kit?.fontes?.titulo;
+    if (!ref) return {};
+    if (!/^[0-9a-f-]{36}$/i.test(ref)) return { familia: ref };
+    try {
+      const a = await db.asset(ref);
+      const dir = path.join(pasta(job), 'fontes'); fs.mkdirSync(dir, { recursive: true });
+      const arq = path.join(dir, path.basename(a.nome || 'fonte.ttf'));
+      if (!fs.existsSync(arq)) await db.baixarAsset(a.storage_path, arq);
+      const familia = (await rodar('fc-scan', ['--format', '%{family[0]}', arq])).trim();
+      return familia ? { fontsDir: dir, familia } : {};
+    } catch (err) { log(`job ${job.id}: fonte da marca não carregou (${err.message}), usando a padrão`); return {}; }
+  }
+
+  async function renderizar(job, e, roteiro, kit, saida, { previa = false } = {}) {
+    const logo = await logoLocal(job, kit);
+    if (roteiro?.versao !== 'm1') return montarComLogo(e.bruto, saida, { logo, previa });
+    const f = await fonteLocal(job, kit);
+    const ass = path.join(pasta(job), 'legenda.ass');
+    fs.writeFileSync(ass, gerarAss({ palavras: roteiro.palavras, duracao: roteiro.duracao_final, kit: kit || {}, titulo: roteiro.titulo, ...(f.familia ? { fonte: f.familia } : {}) }));
+    return montarEdicao(e.bruto, saida, { trechos: roteiro.trechos, ass, fontsDir: f.fontsDir, logo, previa, temAudio: e.info.temAudio });
+  }
+
   async function planejarERenderizar(job, { ajuste } = {}) {
     const e = await garantirBruto(job);
     const kit = await db.kit(job.client_id);
     if (job.status !== 'planejando') await db.atualizar(job.id, 'planejando');
     const cliente = await db.cliente(job.client_id);
-    const r = await planejar({ job, cliente, kit, info: e.info, ajuste, respostas: await db.respostas(job.id), roteiroAnterior: job.roteiro });
+    const r = await planejar({ job, cliente, kit, info: e.info, ajuste, respostas: await db.respostas(job.id), roteiroAnterior: job.roteiro, bruto: e.bruto, pasta: pasta(job) });
     if (r.pergunta) { await db.perguntar(job.id, r.pergunta, r.opcoes); return 'aguardando_resposta'; }
     await db.atualizar(job.id, 'renderizando', { roteiro: r.roteiro, kit_versao: kit?.versao ?? null, ...r.custo });
     const previa = path.join(pasta(job), `previa-${Date.now()}.mp4`);
-    await montarComLogo(e.bruto, previa, { logo: await logoLocal(job, kit), previa: true });
+    await renderizar(job, e, r.roteiro, kit, previa, { previa: true });
     const destino = await db.enviarPrevia(`${job.org_id}/${job.id}/${path.basename(previa)}`, previa);
     fs.rmSync(previa, { force: true });
     await db.atualizar(job.id, 'previa_pronta', { previa_path: destino });
@@ -71,7 +96,7 @@ export function criarEtapas({ db, drive, workDir, planejar = planejarBase, log =
       destinoPasta = await drive.pastaFilha(cliente.pasta_brutos_id, 'Finalizados (sistema)');
     }
     const final = path.join(pasta(job), 'final.mp4');
-    await montarComLogo(e.bruto, final, { logo: await logoLocal(job, kit) });
+    await renderizar(job, e, job.roteiro, kit, final);
     const nome = `${limpo(cliente.nome)} - ${job.numero} - ${limpo(path.parse(e.nome || job.origem_nome || 'reel').name)}.mp4`;
     const arq = await drive.enviar(final, { nome, pastaId: destinoPasta });
     await db.atualizar(job.id, 'entregue', { final_drive_id: arq.id }, `No Drive: ${nome}`);

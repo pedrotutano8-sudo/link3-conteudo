@@ -31,3 +31,32 @@ export async function montarComLogo(entrada, saida, { logo, previa = false, larg
   await rodar(config.ffmpeg, args);
   return saida;
 }
+
+// Módulo 1: corta as pausas (trechos), monta 9:16, aplica logo e queima a legenda (.ass) num passo só
+export async function montarEdicao(entrada, saida, { trechos, ass, fontsDir, logo, previa = false, larguraLogo = 160, margem = 48, temAudio = true } = {}) {
+  const [w, h] = previa ? [540, 960] : [1080, 1920];
+  const lw = Math.round(larguraLogo * (w / 1080)), m = Math.round(margem * (w / 1080));
+  const partes = [], rotulos = [];
+  (trechos?.length ? trechos : [[0, null]]).forEach(([a, b], k) => {
+    const fim = b == null ? '' : `:end=${b}`;
+    partes.push(`[0:v]trim=start=${a}${fim},setpts=PTS-STARTPTS[v${k}]`);
+    if (temAudio) partes.push(`[0:a]atrim=start=${a}${fim},asetpts=PTS-STARTPTS[a${k}]`);
+    rotulos.push(temAudio ? `[v${k}][a${k}]` : `[v${k}]`);
+  });
+  const n = rotulos.length;
+  partes.push(`${rotulos.join('')}concat=n=${n}:v=1:a=${temAudio ? 1 : 0}[vc]${temAudio ? '[ac]' : ''}`);
+  partes.push(`[vc]scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h},setsar=1[v]`);
+  const args = ['-y', '-i', entrada];
+  let atual = '[v]';
+  if (logo) { args.push('-i', logo); partes.push(`[1:v]scale=${lw}:-1[l];${atual}[l]overlay=W-w-${m}:${m}[vl]`); atual = '[vl]'; }
+  if (ass) {
+    const esc = (s) => s.replace(/\\/g, '/').replace(/:/g, '\\:').replace(/'/g, "\\'");
+    partes.push(`${atual}ass=filename='${esc(ass)}'${fontsDir ? `:fontsdir='${esc(fontsDir)}'` : ''}[vs]`);
+    atual = '[vs]';
+  }
+  args.push('-filter_complex', partes.join(';'), '-map', atual);
+  if (temAudio) args.push('-map', '[ac]', '-c:a', 'aac', '-b:a', '160k');
+  args.push('-c:v', 'libx264', '-preset', previa ? 'veryfast' : 'medium', '-crf', previa ? '28' : '20', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', saida);
+  await rodar(config.ffmpeg, args);
+  return saida;
+}
