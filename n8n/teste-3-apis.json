@@ -1,0 +1,170 @@
+{
+  "name": "Link3 · Teste das 3 APIs (S1)",
+  "nodes": [
+    {
+      "id": "3a236340-109c-40bd-a828-f307f6ddd169",
+      "name": "Testar agora",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "8b485e75-d132-4cf4-9e48-b8e985578f74",
+      "name": "Claude (Anthropic)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        240,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "anthropicApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"model\": \"claude-haiku-5-5\", \"max_tokens\": 120, \"messages\": [{\"role\": \"user\", \"content\": \"Responda em uma frase curta, em português: o sistema de conteúdo da Link3 está conectado ao Claude.\"}]}",
+        "options": {}
+      },
+      "credentials": {
+        "anthropicApi": {
+          "id": "",
+          "name": "Link3 · Anthropic"
+        }
+      }
+    },
+    {
+      "id": "0f00f7f9-6853-4b73-a5f7-0e5543365ef3",
+      "name": "OpenAI",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        480,
+        0
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.openai.com/v1/models",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openAiApi",
+        "options": {}
+      },
+      "credentials": {
+        "openAiApi": {
+          "id": "",
+          "name": "Link3 · OpenAI"
+        }
+      }
+    },
+    {
+      "id": "bdc6a499-a5ae-4554-869a-8bbf91228801",
+      "name": "Google Drive",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        720,
+        0
+      ],
+      "alwaysOutputData": true,
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "fileFolder",
+        "searchMethod": "name",
+        "queryString": "",
+        "returnAll": false,
+        "limit": 20,
+        "filter": {},
+        "options": {
+          "fields": [
+            "id",
+            "name",
+            "mimeType"
+          ]
+        }
+      },
+      "credentials": {
+        "googleApi": {
+          "id": "",
+          "name": "Link3 · Drive"
+        }
+      }
+    },
+    {
+      "id": "b604a5a2-cf75-4e7b-87df-5d1fd89a7490",
+      "name": "Resultado",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        960,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const claude = $('Claude (Anthropic)').first().json;\nconst openai = $('OpenAI').first().json;\nconst drive = $('Google Drive').all().map(i => i.json).filter(j => j.id);\nconst modelos = (openai.data || []).map(m => m.id);\nreturn [{ json: {\n  claude: (claude.content || []).map(c => c.text).join(' ') || 'sem resposta',\n  claude_modelo: claude.model,\n  openai: modelos.length ? `${modelos.length} modelos liberados · transcrição (whisper-1): ${modelos.includes('whisper-1') ? 'ok' : 'não encontrado'}` : 'sem resposta',\n  drive: drive.length ? `${drive.length} itens visíveis: ${drive.slice(0, 8).map(d => d.name).join(', ')}` : 'conectado, mas nenhuma pasta compartilhada com a conta de serviço ainda',\n  testado_em: new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }),\n} }];"
+      }
+    }
+  ],
+  "connections": {
+    "Testar agora": {
+      "main": [
+        [
+          {
+            "node": "Claude (Anthropic)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude (Anthropic)": {
+      "main": [
+        [
+          {
+            "node": "OpenAI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI": {
+      "main": [
+        [
+          {
+            "node": "Google Drive",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Drive": {
+      "main": [
+        [
+          {
+            "node": "Resultado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}
