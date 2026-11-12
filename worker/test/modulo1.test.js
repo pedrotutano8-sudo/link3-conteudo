@@ -19,7 +19,7 @@ const palavrasFake = [
 ];
 
 test('cortes: tira pausas e vícios e remapeia o tempo', () => {
-  assert.ok(ehVicio('éé') && ehVicio('Ahn,') && !ehVicio('eu'));
+  assert.ok(ehVicio('éé') && ehVicio('Ahn,') && ehVicio('ééé') && !ehVicio('eu') && !ehVicio('e') && !ehVicio('é') && !ehVicio('É,'));
   const c = calcularCortes(palavrasFake, { duracao: 8, pausa: 0.45, respiro: 0.12 });
   assert.deepStrictEqual(c.trechos, [[0.08, 1.52], [4.08, 5.92]]);
   assert.equal(c.duracaoFinal, 3.28);
@@ -71,7 +71,7 @@ test('Módulo 1 ponta a ponta: Drive → transcrição → cortes + legenda + ga
   const ia = {
     extrairAudio: async (v, d) => { await rodar('ffmpeg', ['-y', '-i', v, '-vn', '-ac', '1', '-ar', '16000', d]); return d; },
     transcrever: async () => { transcricoes++; return { texto: palavrasFake.map((w) => w.p).join(' '), palavras: palavrasFake, segundos: 8 }; },
-    gancoECopy: async (a) => { chamadasClaude.push(a); return { remover: a.ajuste ? [] : [[1, 2]], titulo: a.ajuste ? 'Erros de clareamento' : '3 erros de clareamento', copy: 'Você comete esses erros?\nAgende pelo link da bio', tokens: { entrada: 900, saida: 120 }, usd: 0.0045 }; },
+    gancoECopy: async (a) => { chamadasClaude.push(a); return { remover: a.ajuste ? [] : [[1, 2]], corrigir: [[8, 'clareamentos']], titulo: a.ajuste ? 'Erros de clareamento' : '3 erros de clareamento', copy: 'Você comete esses erros?\nAgende pelo link da bio', tokens: { entrada: 900, saida: 120 }, usd: 0.0045 }; },
   };
 
   const { processar } = criarEtapas({ db, drive, workDir: path.join(tmp, 'work'), planejar: criarPlanejadorM1({ ia }), log: () => {} });
@@ -84,6 +84,7 @@ test('Módulo 1 ponta a ponta: Drive → transcrição → cortes + legenda + ga
   assert.equal(roteiro.titulo, '3 erros de clareamento');
   assert.equal(roteiro.trechos.length, 3);
   assert.deepStrictEqual(roteiro.removido, ['eu vou']);
+  assert.equal(roteiro.palavras[roteiro.palavras.length - 1].p, 'clareamentos.'); // correção mantém a pontuação
   assert.ok(!roteiro.palavras.some((w) => w.p === 'vou'));
   assert.ok(chamadasClaude[0].palavras.length === 9);
   assert.ok(rend.campos.segundos_audio === 8 && rend.campos.tokens_entrada === 900);

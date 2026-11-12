@@ -15,7 +15,8 @@ export function criarPlanejadorM1({ ia = iaPadrao } = {}) {
     if (!transcricao?.palavras?.length) {
       if (!info.temAudio) return { roteiro: { versao: 'base', duracao_final: info.duracao, motivo: 'vídeo sem áudio' }, custo: {} };
       const audio = await ia.extrairAudio(bruto, path.join(pasta, 'audio.mp3'));
-      const t = await ia.transcrever(audio);
+      const dica = [cliente?.nome, job.comando].filter(Boolean).join('. ');
+      const t = await ia.transcrever(audio, { dica });
       fs.rmSync(audio, { force: true });
       transcricao = { texto: t.texto, palavras: t.palavras };
       custo.segundos_audio = t.segundos || info.duracao;
@@ -26,7 +27,13 @@ export function criarPlanejadorM1({ ia = iaPadrao } = {}) {
     // erros de gravação e takes repetidos saem antes do corte de pausas (viram silêncio e são cortados junto)
     const fora = new Set();
     for (const [a, b] of g.remover || []) for (let k = a; k <= b; k++) fora.add(k);
-    const mantidas = transcricao.palavras.filter((_, k) => !fora.has(k));
+    const certas = transcricao.palavras.map((w, k) => ({ ...w }));
+    for (const [k, txt] of g.corrigir || []) {
+      // mantém a pontuação original grudada na palavra
+      const pont = (certas[k].p.match(/[.,!?;:]+$/) || [''])[0];
+      certas[k].p = txt.replace(/[.,!?;:]+$/, '') + pont;
+    }
+    const mantidas = certas.filter((_, k) => !fora.has(k));
     const cortes = calcularCortes(mantidas, { duracao: info.duracao, pausa: config.pausaMax });
     custo.custo_ia_usd += g.usd;
     custo.tokens_entrada += g.tokens.entrada;

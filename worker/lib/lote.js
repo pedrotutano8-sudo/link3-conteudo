@@ -45,6 +45,7 @@ export function criarLote({ db, drive, workDir, ia = iaPadrao, log = console.log
     const roteiros = textos.join('\n\n---\n\n');
     await db.atualizar(job.id, 'preparando', {}, `Roteiro: ${roteiroDocs.map((d) => d.name).join(', ')} · ${videos.length} vídeos para transcrever`);
 
+    const clienteNome = (await db.cliente(job.client_id))?.nome || '';
     // transcrição de cada bruto
     const custo = { custo_ia_usd: 0, tokens_entrada: 0, tokens_saida: 0, segundos_audio: 0 };
     let feitos = 0;
@@ -56,7 +57,7 @@ export function criarLote({ db, drive, workDir, ia = iaPadrao, log = console.log
         let fala = '';
         if (info.temAudio) {
           await ia.extrairAudio(local, audio);
-          const t = await ia.transcrever(audio);
+          const t = await ia.transcrever(audio, { dica: `${clienteNome}. ${roteiros}` });
           fala = t.texto; custo.segundos_audio += t.segundos || info.duracao;
         }
         return { n: k + 1, id: v.id, nome: v.name, duracao: info.duracao, fala };
@@ -78,17 +79,20 @@ export function criarLote({ db, drive, workDir, ia = iaPadrao, log = console.log
       const takes = r.videos.map((n) => porN.get(n));
       return {
         org_id: job.org_id, client_id: job.client_id, tipo: 'reel', lote_id: job.id, created_by: job.created_by ?? null,
-        origem_drive_id: takes[0].id, origem_nome: `Roteiro ${k + 1}: ${r.titulo}`.slice(0, 200),
+        origem_drive_id: takes[0].id, origem_nome: `${r.extra ? 'Extra' : `Roteiro ${k + 1}`}: ${r.titulo}`.slice(0, 200),
         origens: takes.map((t) => ({ id: t.id, nome: t.nome })),
-        comando: [`Siga este roteiro:\n${r.roteiro || r.titulo}`, job.comando].filter(Boolean).join('\n\n'),
+        comando: [r.extra
+          ? `Peça fora do documento de roteiros (${r.titulo}). Resumo: ${r.roteiro}. Monte a peça completa, com um take bom de cada parte, na ordem.`
+          : `Siga este roteiro:\n${r.roteiro || r.titulo}`, job.comando].filter(Boolean).join('\n\n'),
       };
     });
     const criados = await db.criarJobs(novos);
     const resumo = {
       versao: 'lote',
       roteiro_arquivo: roteiroDocs.map((d) => d.name),
-      reels: g.reels.map((r, k) => ({ numero: criados[k]?.numero, titulo: r.titulo, takes: r.videos.map((n) => porN.get(n).nome) })),
+      reels: g.reels.map((r, k) => ({ numero: criados[k]?.numero, titulo: r.titulo, extra: r.extra || undefined, takes: r.videos.map((n) => porN.get(n).nome) })),
       sobras: g.sobras.map((n) => porN.get(n).nome),
+      videos: lista.map((v) => ({ nome: v.nome, duracao: Math.round(v.duracao || 0), fala: (v.fala || '').slice(0, 400) })),
     };
     await db.atualizar(job.id, 'entregue', { roteiro: resumo, ...custo }, `${criados.length} pedidos de reel criados (#${criados.map((c) => c.numero).join(', #')})`);
     fs.rmSync(dir, { recursive: true, force: true });

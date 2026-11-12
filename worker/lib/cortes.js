@@ -2,7 +2,8 @@
 // Entrada: palavras [{p, i, f}] (texto, início e fim em segundos no bruto).
 // Saída: trechos mantidos [[ini, fim]] e as palavras com o tempo já no vídeo cortado.
 
-const VICIO = /^(e+h*|é+|ã+|ah+|ahn+|hum+|hm+|uhm*|tipo assim)$/i;
+// só hesitação: "e" e "é" sozinhos são palavras (conjunção e verbo) e ficam
+const VICIO = /^(e{2,}h*|eh+|é{2,}|ã+|ah+|ahn+|hum+|hm+|uhm*)$/i;
 
 export function ehVicio(p) {
   return VICIO.test(String(p || '').toLowerCase().replace(/[^\p{L} ]/gu, '').trim());

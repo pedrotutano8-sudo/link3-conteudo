@@ -10,7 +10,7 @@ export async function extrairAudio(video, destino) {
   return destino;
 }
 
-export async function transcrever(audio, { fetchImpl = fetch } = {}) {
+export async function transcrever(audio, { fetchImpl = fetch, dica = '' } = {}) {
   if (!config.openaiKey) throw new Error('OPENAI_API_KEY não configurada no worker');
   const fd = new FormData();
   fd.append('file', new Blob([fs.readFileSync(audio)], { type: 'audio/mpeg' }), path.basename(audio));
@@ -18,6 +18,8 @@ export async function transcrever(audio, { fetchImpl = fetch } = {}) {
   fd.append('language', 'pt');
   fd.append('response_format', 'verbose_json');
   fd.append('timestamp_granularities[]', 'word');
+  // nomes e termos da marca/roteiro: ajuda a escrever certo (ex.: "GNX Group", não "gene X")
+  if (dica) fd.append('prompt', dica.slice(0, 800));
   const r = await fetchImpl('https://api.openai.com/v1/audio/transcriptions', {
     method: 'POST', headers: { Authorization: `Bearer ${config.openaiKey}` }, body: fd,
   });
@@ -29,11 +31,12 @@ export async function transcrever(audio, { fetchImpl = fetch } = {}) {
 
 const PROMPT = `Você edita reels para uma agência de marketing. Recebe a transcrição palavra a palavra (numerada) de um vídeo bruto gravado pelo cliente e devolve:
 - "remover": trechos que não podem ir ao ar, como lista de pares [primeira, ultima] com os números das palavras. Remova: erros de gravação e comentários fora do roteiro ("ai, não ficou bom", "corta", "de novo", "espera"), frases começadas e abandonadas que são repetidas logo depois (fica só a última versão completa) e conversa com quem está filmando. Não remova conteúdo bom. Se não houver nada, devolva [].
+- "corrigir": palavras que a transcrição escreveu errado (nome da marca, de pessoas, termos técnicos, siglas), como lista de pares [número, "como escrever"]. Use as informações da marca e o roteiro como referência. Se estiver tudo certo, devolva [].
 - "titulo": gancho curto para aparecer no topo nos primeiros segundos (máx. 6 palavras, sem emoji, sem aspas, sem promessa que o vídeo não cumpre). Use o assunto real da fala que fica no vídeo.
 - "copy": legenda do post no Instagram no tom de voz da marca: 1ª linha que prende, 2 a 5 frases curtas, um CTA da lista da marca (se houver) e até 5 hashtags do assunto ou da marca do cliente.
 Se o pedido trouxer um roteiro: o vídeo pode ter vários takes da mesma fala. Mantenha só um take de cada fala do roteiro (o último completo e sem erro) e remova os outros takes e tudo o que estiver fora do roteiro.
 A copy é do cliente: nunca cite a agência, quem editou ou o pedido interno da equipe. Siga as regras da marca. Nunca invente preço, prazo, dado ou nome que não esteja na fala ou nas informações da marca.
-Responda só com JSON: {"remover": [[0, 3]], "titulo": "...", "copy": "..."}`;
+Responda só com JSON: {"remover": [[0, 3]], "corrigir": [[5, "GNX"]], "titulo": "...", "copy": "..."}`;
 
 export async function gancoECopy({ texto, palavras = null, cliente = {}, comando = '', ajuste = '', anterior = null }, { fetchImpl = fetch } = {}) {
   if (!config.anthropicKey) throw new Error('ANTHROPIC_API_KEY não configurada no worker');
@@ -69,8 +72,11 @@ export async function gancoECopy({ texto, palavras = null, cliente = {}, comando
   const remover = (Array.isArray(saida.remover) ? saida.remover : [])
     .map((r) => (Array.isArray(r) ? [Number(r[0]), Number(r[1] ?? r[0])] : [Number(r), Number(r)]))
     .filter(([a, b]) => Number.isInteger(a) && Number.isInteger(b) && a >= 0 && b >= a && b < n);
+  const corrigir = (Array.isArray(saida.corrigir) ? saida.corrigir : [])
+    .filter((c) => Array.isArray(c) && Number.isInteger(Number(c[0])) && Number(c[0]) >= 0 && Number(c[0]) < n && typeof c[1] === 'string' && c[1].trim())
+    .map((c) => [Number(c[0]), c[1].trim()]);
   return {
-    remover,
+    remover, corrigir,
     titulo: String(saida.titulo || '').trim(), copy: String(saida.copy || '').trim(),
     tokens: { entrada: ent, saida: sai },
     usd: (ent * config.precoClaudeEntrada + sai * config.precoClaudeSaida) / 1e6,
@@ -80,7 +86,8 @@ export async function gancoECopy({ texto, palavras = null, cliente = {}, comando
 const PROMPT_LOTE = `Você organiza a edição de reels de uma agência. Recebe o documento de roteiros do cliente e a lista de vídeos brutos de uma pasta (número, nome e a fala transcrita de cada um, na ordem em que foram gravados).
 Para cada roteiro do documento, diga quais vídeos pertencem a ele, na ordem em que devem entrar no reel. Um vídeo pode ser um take repetido da mesma fala: inclua todos os takes daquela fala (a edição escolhe o melhor depois). Não use o mesmo vídeo em dois roteiros. Vídeos sem relação com nenhum roteiro (bastidores, testes, falas soltas) ficam em "sobras".
 Para cada reel, devolva também o texto do roteiro correspondente, copiado do documento.
-Responda só com JSON: {"reels": [{"titulo": "nome curto do roteiro", "roteiro": "texto do roteiro", "videos": [3, 4, 5]}], "sobras": [1, 2]}`;
+Se vídeos fora do documento formarem uma peça completa por conta própria (por exemplo um quadro ou programa com abertura, assunto e encerramento, gravado em vários takes), crie também um reel com "extra": true, título descritivo e, em "roteiro", um resumo do que a peça diz. Bastidores, testes e falas soltas continuam em "sobras".
+Responda só com JSON: {"reels": [{"titulo": "nome curto do roteiro", "roteiro": "texto do roteiro", "videos": [3, 4, 5], "extra": false}], "sobras": [1, 2]}`;
 
 export async function agruparPorRoteiro({ roteiros, videos, cliente = {}, comando = '' }, { fetchImpl = fetch } = {}) {
   if (!config.anthropicKey) throw new Error('ANTHROPIC_API_KEY não configurada no worker');
@@ -104,6 +111,7 @@ export async function agruparPorRoteiro({ roteiros, videos, cliente = {}, comand
     titulo: String(x.titulo || '').trim() || 'Roteiro',
     roteiro: String(x.roteiro || '').trim(),
     videos: (x.videos || []).map(Number).filter((n) => validos.has(n) && !usados.has(n) && usados.add(n)),
+    extra: Boolean(x.extra),
   })).filter((x) => x.videos.length);
   const ent = j.usage?.input_tokens || 0, sai = j.usage?.output_tokens || 0;
   return {
