@@ -3,6 +3,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import * as iaPadrao from './ia.js';
+import { config } from './config.js';
 import { medir } from './midia.js';
 import { textoArquivo } from './documento.js';
 
@@ -75,7 +76,7 @@ export function criarLote({ db, drive, workDir, ia = iaPadrao, log = console.log
         if (++feitos % 5 === 0 || feitos === videos.length) await db.atualizar(job.id, 'preparando', {}, `Transcritos ${feitos} de ${videos.length}`).catch(() => {});
       }
     });
-    custo.custo_ia_usd += (custo.segundos_audio / 60) * 0.006;
+    custo.custo_ia_usd += (custo.segundos_audio / 60) * (config.elevenlabsKey ? config.precoScribeMinuto : 0.006);
     if (falhas.length === videos.length) throw new Error(`Nenhum vídeo foi transcrito (${falhas[0]})`);
     if (falhas.length) await db.atualizar(job.id, 'preparando', {}, `${falhas.length} vídeo(s) sem transcrição: ${falhas.slice(0, 3).join(' · ')}`);
 

@@ -9,6 +9,34 @@ export function ehVicio(p) {
   return VICIO.test(String(p || '').toLowerCase().replace(/[^\p{L} ]/gu, '').trim());
 }
 
+// repetição que o editor sempre corta, sem depender da IA:
+// · palavra/expressão repetida colada ("pela pela", "a gente a gente", "que eu que eu") → sai a 1ª
+// · palavra interrompida ("tra-", "conec—") → sai
+// Repetição enfática fica ("muito, muito", "não, não"), e nada atravessa fim de frase.
+const ENFASE = new Set(['muito', 'bem', 'sim', 'nao', 'ja', 'mais', 'cada', 'pouco', 'bom']);
+const normal = (p) => String(p || '').toLowerCase().normalize('NFD').replace(/\p{M}/gu, '').replace(/[^\p{L}\p{N}]/gu, '');
+export function repeticoes(palavras) {
+  const fora = new Set();
+  const n = palavras.length;
+  const fimFrase = (k) => /[.!?…]$/.test(String(palavras[k]?.p || '').trim());
+  for (let k = 0; k < n; k++) if (/[-—–]$/.test(String(palavras[k].p).trim()) && normal(palavras[k].p)) fora.add(k);
+  for (let tam = 4; tam >= 1; tam--) {
+    for (let k = 0; k + 2 * tam <= n; k++) {
+      let igual = true;
+      for (let m = 0; m < tam && igual; m++) {
+        const a = normal(palavras[k + m].p), b = normal(palavras[k + tam + m].p);
+        if (!a || a !== b) igual = false;
+      }
+      if (!igual) continue;
+      if (fimFrase(k + tam - 1)) continue;                                  // "...isso. Isso é..." não é gagueira
+      if (tam === 1 && ENFASE.has(normal(palavras[k].p))) continue;
+      if (palavras[k + tam].i - palavras[k + tam - 1].f > 1.5) continue;    // longe demais: é outro take (fica com a IA)
+      for (let m = 0; m < tam; m++) fora.add(k + m);
+    }
+  }
+  return fora;
+}
+
 /**
  * @param {Array<{p:string,i:number,f:number}>} palavras
  * @param {object} o

@@ -17,6 +17,10 @@ export const config = {
   openaiKey: process.env.OPENAI_API_KEY || '',
   anthropicKey: process.env.ANTHROPIC_API_KEY || '',
   modeloTranscricao: process.env.MODELO_TRANSCRICAO || 'whisper-1',
+  // ElevenLabs Scribe (opcional): transcrição literal, preferida quando a chave existe
+  elevenlabsKey: process.env.ELEVENLABS_API_KEY || '',
+  modeloScribe: process.env.MODELO_SCRIBE || 'scribe_v2',
+  precoScribeMinuto: Number(process.env.PRECO_SCRIBE_MINUTO || 0.0037),   // US$ 0,22/hora
   modeloClaude: process.env.MODELO_CLAUDE || 'claude-sonnet-5-5',
   precoClaudeEntrada: Number(process.env.PRECO_CLAUDE_ENTRADA || 3),   // US$ por milhão de tokens
   precoClaudeSaida: Number(process.env.PRECO_CLAUDE_SAIDA || 15),
@@ -26,7 +30,7 @@ export const config = {
   pausaMax: Number(process.env.PAUSA_MAX || 0.35),                   // silêncio maior que isso é cortado (s)
 };
 
-export const modulo1Ativo = () => Boolean(config.openaiKey && config.anthropicKey);
+export const modulo1Ativo = () => Boolean((config.openaiKey || config.elevenlabsKey) && config.anthropicKey);
 
 export function conferir() {
   const falta = [];

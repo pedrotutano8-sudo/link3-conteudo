@@ -3,7 +3,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { config } from './config.js';
-import { calcularCortes } from './cortes.js';
+import { calcularCortes, repeticoes } from './cortes.js';
 import * as iaPadrao from './ia.js';
 import { detectarSilencios, audioEditado } from './midia.js';
 
@@ -21,7 +21,8 @@ export function criarPlanejadorM1({ ia = iaPadrao } = {}) {
       fs.rmSync(audio, { force: true });
       transcricao = { texto: t.texto, palavras: t.palavras };
       custo.segundos_audio = t.segundos || info.duracao;
-      custo.custo_ia_usd += (custo.segundos_audio / 60) * 0.006;
+      custo.custo_ia_usd += (custo.segundos_audio / 60) * (t.usdMinuto ?? 0.006);
+      transcricao.motor = t.motor;
     }
 
     const g = await ia.gancoECopy({ texto: transcricao.texto, palavras: transcricao.palavras, cliente, comando: job.comando, ajuste, anterior: roteiroAnterior });
@@ -34,6 +35,11 @@ export function criarPlanejadorM1({ ia = iaPadrao } = {}) {
       const pont = (certas[k].p.match(/[.,!?;:]+$/) || [''])[0];
       certas[k].p = txt.replace(/[.,!?;:]+$/, '') + pont;
     }
+    // gagueira/repetição colada que a IA deixou passar
+    // (roda sobre o que a IA manteve, para não cortar as duas cópias quando ela já tirou uma)
+    const idx = certas.map((_, k) => k).filter((k) => !fora.has(k));
+    const repet = [...repeticoes(idx.map((k) => certas[k]))].map((m) => idx[m]);
+    for (const k of repet) fora.add(k);
     const mantidas = certas.filter((_, k) => !fora.has(k));
     const { silencios } = info.temAudio ? await detectarSilencios(bruto).catch(() => ({ silencios: [] })) : { silencios: [] };
     let cortes = calcularCortes(mantidas, { duracao: info.duracao, pausa: config.pausaMax, silencios });
@@ -46,9 +52,12 @@ export function criarPlanejadorM1({ ia = iaPadrao } = {}) {
         const t2 = await ia.transcrever(aud, { dica: [cliente?.nome, job.comando].filter(Boolean).join('. ') });
         fs.rmSync(aud, { force: true });
         custo.segundos_audio += t2.segundos || cortes.duracaoFinal;
-        custo.custo_ia_usd += ((t2.segundos || cortes.duracaoFinal) / 60) * 0.006;
+        custo.custo_ia_usd += ((t2.segundos || cortes.duracaoFinal) / 60) * (t2.usdMinuto ?? 0.006);
         const rv = await ia.revisarFala({ palavras: t2.palavras });
         custo.custo_ia_usd += rv.usd; custo.tokens_entrada += rv.tokens.entrada; custo.tokens_saida += rv.tokens.saida;
+        // repetição colada que só apareceu na 2ª transcrição entra junto com o que o revisor marcou
+        const jaMarcadas = new Set(rv.remover.flatMap(([a, b]) => Array.from({ length: b - a + 1 }, (_, m) => a + m)));
+        rv.remover = [...rv.remover, ...[...repeticoes(t2.palavras)].filter((k) => !jaMarcadas.has(k)).map((k) => [k, k])];
         if (rv.remover.length) {
           // tempo da fala editada → tempo do bruto
           const inicios = []; let acc = 0;
@@ -80,8 +89,8 @@ export function criarPlanejadorM1({ ia = iaPadrao } = {}) {
         duracao_bruto: info.duracao,
         duracao_final: cortes.duracaoFinal,
         segundos_cortados: cortes.cortado,
-        removido: (g.remover || []).map(([a, b]) => transcricao.palavras.slice(a, b + 1).map((w) => w.p).join(' ')),
-        qa: { silencios_cortados: silencios.length, repetidas_restantes: repetidas, revisao: revisado },
+        removido: [...(g.remover || []).map(([a, b]) => transcricao.palavras.slice(a, b + 1).map((w) => w.p).join(' ')), ...repet.map((k) => `${transcricao.palavras[k].p} (repetição)`)],
+        qa: { motor: transcricao.motor || 'whisper', silencios_cortados: silencios.length, repetidas_restantes: repetidas, revisao: revisado },
         transcricao,
         formato: '1080x1920',
         logo: Boolean(kit?.logo_id),

@@ -19,7 +19,61 @@ export async function extrairAudio(video, destino) {
   return destino;
 }
 
-export async function transcrever(audio, { fetchImpl = fetch, dica = '' } = {}) {
+// termos-chave para o ASR: nomes próprios, siglas e palavras com maiúscula da dica (marca + roteiro)
+export function termosChave(dica = '', limite = 50) {
+  const vistos = new Map();
+  const COMUNS = new Set('a o as os na no nas nos eu e é siga este esta isso aqui hoje então mas que para com da do de em um uma se quando onde como meu minha nosso nossa ele ela vamos vem'.split(' '));
+  const add = (t) => {
+    const ps = t.trim().split(/\s+/);
+    while (ps.length && COMUNS.has(ps[0].toLowerCase())) ps.shift();   // "Na GNX" → "GNX"
+    t = ps.join(' '); if (t.length >= 2 && t.length <= 40 && !vistos.has(t.toLowerCase())) vistos.set(t.toLowerCase(), t); };
+  // sequências de palavras com inicial maiúscula ("GNX Group", "Trade Marketing") e siglas
+  for (const m of String(dica).matchAll(/\b(?:[A-ZÁÉÍÓÚÂÊÔÃÕÇ][\p{L}0-9&]*)(?:\s+(?:[A-ZÁÉÍÓÚÂÊÔÃÕÇ][\p{L}0-9&]*))*/gu)) {
+    const t = m[0];
+    if (t.split(/\s+/).length === 1 && t.length < 4 && !/^[A-Z0-9]{2,}$/.test(t)) continue; // "Eu", "Na"
+    add(t);
+  }
+  return [...vistos.values()].slice(0, limite);
+}
+
+// ElevenLabs Scribe: transcrição literal (mantém "éé", gagueira e recomeços) com tempo por palavra
+export async function transcreverScribe(audio, { fetchImpl = fetch, dica = '' } = {}) {
+  const enviar = async (comTermos) => {
+    const fd = new FormData();
+    fd.append('file', new Blob([fs.readFileSync(audio)], { type: 'audio/mpeg' }), path.basename(audio));
+    fd.append('model_id', config.modeloScribe);
+    fd.append('language_code', 'por');
+    fd.append('timestamps_granularity', 'word');
+    fd.append('tag_audio_events', 'false');
+    if (comTermos) for (const t of termosChave(dica)) fd.append('keyterms', t);
+    return comRetentativa(fetchImpl, 'https://api.elevenlabs.io/v1/speech-to-text', {
+      method: 'POST', headers: { 'xi-api-key': config.elevenlabsKey }, body: fd,
+    });
+  };
+  let r = await enviar(true);
+  // termos-chave são opcionais: se a API recusar o campo, tenta sem
+  if (!r.ok && [400, 422].includes(r.status)) r = await enviar(false);
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(`Scribe falhou (${r.status}): ${JSON.stringify(j.detail || j).slice(0, 160)}`);
+  const palavras = (j.words || [])
+    .filter((w) => (w.type || 'word') === 'word')
+    .map((w) => ({ p: String(w.text).trim(), i: Number(w.start), f: Number(w.end) }))
+    .filter((w) => w.p && Number.isFinite(w.i) && Number.isFinite(w.f));
+  const segundos = palavras.length ? palavras[palavras.length - 1].f : 0;
+  return { texto: palavras.map((w) => w.p).join(' ') || j.text || '', palavras, segundos, motor: 'scribe', usdMinuto: config.precoScribeMinuto };
+}
+
+// motor de transcrição: Scribe quando houver chave (mais literal e acerta nomes), senão Whisper.
+// Se o Scribe cair, segue no Whisper para não travar o pedido.
+export async function transcrever(audio, opts = {}) {
+  if (config.elevenlabsKey) {
+    try { return await transcreverScribe(audio, opts); }
+    catch (e) { if (!config.openaiKey) throw e; console.warn(`[asr] ${e.message} → usando Whisper`); }
+  }
+  return transcreverWhisper(audio, opts);
+}
+
+export async function transcreverWhisper(audio, { fetchImpl = fetch, dica = '' } = {}) {
   if (!config.openaiKey) throw new Error('OPENAI_API_KEY não configurada no worker');
   const fd = new FormData();
   fd.append('file', new Blob([fs.readFileSync(audio)], { type: 'audio/mpeg' }), path.basename(audio));
@@ -39,7 +93,7 @@ export async function transcrever(audio, { fetchImpl = fetch, dica = '' } = {}) 
   // "ÔQue": o modelo às vezes gruda um "Ô" no começo da palavra (respiração no início do take)
   const limpar = (p) => String(p).trim().replace(/^Ô(?=[A-ZÁÉÍÓÚÂÊÔÃÕÇ])/, '');
   const palavras = (j.words || []).map((w) => ({ p: limpar(w.word), i: Number(w.start), f: Number(w.end) })).filter((w) => w.p);
-  return { texto: palavras.map((w) => w.p).join(' ') || j.text || '', palavras, segundos: Number(j.duration) || 0 };
+  return { texto: palavras.map((w) => w.p).join(' ') || j.text || '', palavras, segundos: Number(j.duration) || 0, motor: 'whisper', usdMinuto: 0.006 };
 }
 
 const PROMPT = `Você edita reels para uma agência de marketing. Recebe a transcrição palavra a palavra (numerada) de um vídeo bruto gravado pelo cliente e devolve:

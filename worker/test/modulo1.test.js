@@ -153,3 +153,14 @@ test('revisão: o que o Claude marca na fala já editada sai do bruto no lugar c
   assert.ok(r.roteiro.trechos.length >= 2, JSON.stringify(r.roteiro.trechos));
   assert.ok(r.roteiro.duracao_final < 6 - 0.3);
 });
+
+test('repetição colada sai sem depender da IA (e não corta as duas cópias)', async () => {
+  const { repeticoes } = await import('../lib/cortes.js');
+  const mk = (txt) => txt.split(' ').map((p, k) => ({ p, i: k * 0.4, f: k * 0.4 + 0.3 }));
+  const fica = (t) => mk(t).filter((_, k) => !repeticoes(mk(t)).has(k)).map((w) => w.p).join(' ');
+  assert.equal(fica('eu trabalho pela pela empresa'), 'eu trabalho pela empresa');
+  assert.equal(fica('a gente a gente trabalha'), 'a gente trabalha');
+  assert.equal(fica('muito, muito bom'), 'muito, muito bom');
+  assert.equal(fica('foi isso. Isso mesmo'), 'foi isso. Isso mesmo');
+  assert.equal(fica('tra- trabalho aqui'), 'trabalho aqui');
+});
