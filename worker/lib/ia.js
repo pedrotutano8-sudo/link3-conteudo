@@ -27,8 +27,10 @@ export async function transcrever(audio, { fetchImpl = fetch, dica = '' } = {}) 
   fd.append('language', 'pt');
   fd.append('response_format', 'verbose_json');
   fd.append('timestamp_granularities[]', 'word');
-  // nomes e termos da marca/roteiro: ajuda a escrever certo (ex.: "GNX Group", não "gene X")
-  if (dica) fd.append('prompt', dica.slice(0, 800));
+  // estilo literal (mantém "éé", repetições e frases recomeçadas, que precisam ser vistas para serem cortadas)
+  // + nomes e termos da marca/roteiro (ex.: "GNX Group", não "gene X")
+  const literal = 'Ééé... então, eu, eu acho que, hum, tipo assim, né, a gente... a gente vai começar. ';
+  fd.append('prompt', (literal + (dica || '')).slice(0, 800));
   const r = await comRetentativa(fetchImpl, 'https://api.openai.com/v1/audio/transcriptions', {
     method: 'POST', headers: { Authorization: `Bearer ${config.openaiKey}` }, body: fd,
   });
@@ -39,7 +41,14 @@ export async function transcrever(audio, { fetchImpl = fetch, dica = '' } = {}) 
 }
 
 const PROMPT = `Você edita reels para uma agência de marketing. Recebe a transcrição palavra a palavra (numerada) de um vídeo bruto gravado pelo cliente e devolve:
-- "remover": trechos que não podem ir ao ar, como lista de pares [primeira, ultima] com os números das palavras. Remova: erros de gravação e comentários fora do roteiro ("ai, não ficou bom", "corta", "de novo", "espera"), frases começadas e abandonadas que são repetidas logo depois (fica só a última versão completa) e conversa com quem está filmando. Não remova conteúdo bom. Se não houver nada, devolva [].
+- "remover": trechos que não podem ir ao ar, como lista de pares [primeira, ultima] com os números das palavras. Edite como um editor profissional de reels, com cortes secos e fala corrida. Remova:
+  · erros de gravação e comentários fora do roteiro ("ai, não ficou bom", "corta", "de novo", "espera") e conversa com quem está filmando;
+  · takes repetidos: quando a pessoa repete a mesma frase, fica só a última versão completa e sem erro;
+  · recomeços dentro da frase: "eu entrei, eu entrei aqui na GNX" → remova o primeiro "eu entrei";
+  · palavras repetidas e gaguejadas: "a a gente", "que que", "na na";
+  · hesitações e muletas que não fazem falta: "éé", "hum", "ahn", "tipo", "né", "então" e "assim" soltos no meio da fala, "enfim" usado para ganhar tempo;
+  · trechos em que a pessoa está claramente pensando no que dizer ou se perde e retoma.
+  Não remova conteúdo que faz sentido nem quebre uma frase no meio. Se não houver nada, devolva [].
 - "corrigir": palavras que a transcrição escreveu errado (nome da marca, de pessoas, termos técnicos, siglas), como lista de pares [número, "como escrever"]. Use as informações da marca e o roteiro como referência. Se estiver tudo certo, devolva [].
 - "titulo": gancho curto para aparecer no topo nos primeiros segundos (máx. 6 palavras, sem emoji, sem aspas, sem promessa que o vídeo não cumpre). Use o assunto real da fala que fica no vídeo.
 - "copy": legenda do post no Instagram no tom de voz da marca: 1ª linha que prende, 2 a 5 frases curtas, um CTA da lista da marca (se houver) e até 5 hashtags do assunto ou da marca do cliente.

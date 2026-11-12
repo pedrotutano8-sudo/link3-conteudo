@@ -5,6 +5,7 @@ import path from 'node:path';
 import { config } from './config.js';
 import { calcularCortes } from './cortes.js';
 import * as iaPadrao from './ia.js';
+import { detectarSilencios } from './midia.js';
 
 export function criarPlanejadorM1({ ia = iaPadrao } = {}) {
   return async function planejarM1({ job, cliente, kit, info, ajuste, roteiroAnterior, bruto, pasta }) {
@@ -34,7 +35,11 @@ export function criarPlanejadorM1({ ia = iaPadrao } = {}) {
       certas[k].p = txt.replace(/[.,!?;:]+$/, '') + pont;
     }
     const mantidas = certas.filter((_, k) => !fora.has(k));
-    const cortes = calcularCortes(mantidas, { duracao: info.duracao, pausa: config.pausaMax });
+    const { silencios } = info.temAudio ? await detectarSilencios(bruto).catch(() => ({ silencios: [] })) : { silencios: [] };
+    const cortes = calcularCortes(mantidas, { duracao: info.duracao, pausa: config.pausaMax, silencios });
+    // conferência: palavra repetida colada que sobrou (sinal de gagueira não cortada)
+    const norm = (p) => p.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
+    const repetidas = cortes.palavras.filter((w, k, a) => k > 0 && norm(w.p) && norm(w.p) === norm(a[k - 1].p)).map((w) => w.p);
     custo.custo_ia_usd += g.usd;
     custo.tokens_entrada += g.tokens.entrada;
     custo.tokens_saida += g.tokens.saida;
@@ -50,6 +55,7 @@ export function criarPlanejadorM1({ ia = iaPadrao } = {}) {
         duracao_final: cortes.duracaoFinal,
         segundos_cortados: cortes.cortado,
         removido: (g.remover || []).map(([a, b]) => transcricao.palavras.slice(a, b + 1).map((w) => w.p).join(' ')),
+        qa: { silencios_cortados: silencios.length, repetidas_restantes: repetidas },
         transcricao,
         formato: '1080x1920',
         logo: Boolean(kit?.logo_id),

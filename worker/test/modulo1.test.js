@@ -112,3 +112,21 @@ test('Módulo 1 ponta a ponta: Drive → transcrição → cortes + legenda + ga
   await rodar('ffmpeg', ['-y', '-ss', '0.9', '-i', path.join(drivePasta, fin), '-frames:v', '1', path.join(tmp, 'quadro.png')]);
   fs.writeFileSync(path.join(os.tmpdir(), 'l3m1-ultimo.txt'), tmp);
 });
+
+test('cortes: pausa medida no áudio é cortada mesmo quando a transcrição "estica" a palavra', () => {
+  const ws = [{ p: 'Bom', i: 0.1, f: 0.6 }, { p: 'dia', i: 0.6, f: 2.6 }, { p: 'pessoal', i: 2.6, f: 3.2 }];
+  const c = calcularCortes(ws, { duracao: 4, silencios: [[1.0, 2.4]] });
+  assert.equal(c.trechos.length, 2);
+  assert.ok(c.duracaoFinal < 2.2, `duração ${c.duracaoFinal}`);
+  assert.equal(c.palavras.length, 3);
+  assert.ok(c.palavras.every((w, k, a) => w.f >= w.i && (k === 0 || w.i >= a[k - 1].i)));
+});
+
+test('silêncio detectado pelo áudio', async () => {
+  const { detectarSilencios } = await import('../lib/midia.js');
+  const a = path.join(tmp, 'sil.wav');
+  await rodar('ffmpeg', ['-y', '-f', 'lavfi', '-i', "aevalsrc='0.3*sin(2*PI*300*t)*(lt(t,1)+gt(t,2))':s=16000:d=3", a]);
+  const { silencios } = await detectarSilencios(a);
+  assert.equal(silencios.length, 1);
+  assert.ok(Math.abs(silencios[0][0] - 1) < 0.1 && Math.abs(silencios[0][1] - 2) < 0.1, JSON.stringify(silencios));
+});
