@@ -25,6 +25,9 @@ export function criarLote({ db, drive, workDir, ia = iaPadrao, log = console.log
     // pasta própria por tentativa: uma tentativa anterior que falhou não apaga arquivos desta
     const dir = path.join(workDir, job.id, String(Date.now())); fs.mkdirSync(dir, { recursive: true });
     if (!job.origem_drive_id) throw new Error('Lote sem pasta do Drive');
+    // lote que já criou pedidos não roda de novo (evita duplicar se voltar para a fila)
+    const ja = db.filhos ? await db.filhos(job.id) : [];
+    if (ja.length) { await db.atualizar(job.id, 'entregue', {}, `Lote já tinha criado ${ja.length} pedidos`); return 'entregue'; }
     await db.atualizar(job.id, 'baixando');
     const meta = await drive.meta(job.origem_drive_id);
     if (meta.mimeType !== PASTA) throw new Error('Para lote, cole o link da PASTA com os vídeos e o roteiro');

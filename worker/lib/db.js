@@ -10,6 +10,14 @@ export function criarDb({ url, key }) {
     atualizar: async (id, status, campos = {}, mensagem = null) => ok(await sb.rpc('atualizar_job', { p_job: id, p_status: status, p_campos: campos, p_mensagem: mensagem })),
     falhar: async (id, mensagem) => ok(await sb.rpc('falhar_job', { p_job: id, p_mensagem: mensagem })),
     perguntar: async (id, pergunta, opcoes) => ok(await sb.rpc('perguntar', { p_job: id, p_pergunta: pergunta, p_opcoes: opcoes || null })),
+    filhos: async (loteId) => ok(await sb.from('jobs').select('numero').eq('lote_id', loteId).order('numero')),
+    // worker reiniciou no meio de um pedido: devolve para a fila no ponto certo
+    liberarMeus: async (worker) => {
+      const presos = ok(await sb.from('jobs').select('id, numero, status').eq('worker_id', worker));
+      const volta = { baixando: 'na_fila', preparando: 'na_fila', planejando: 'planejando', renderizando: 'planejando', entregando: 'aprovado' };
+      for (const j of presos) await sb.from('jobs').update({ status: volta[j.status] || j.status, worker_id: null, travado_em: null }).eq('id', j.id);
+      return presos.map((j) => j.numero);
+    },
     criarJobs: async (linhas) => ok(await sb.from('jobs').insert(linhas).select('id, numero')),
     cliente: async (id) => ok(await sb.from('clients').select('*').eq('id', id).single()),
     kit: async (clientId) => ok(await sb.from('brand_kits').select('*').eq('client_id', clientId).maybeSingle()),

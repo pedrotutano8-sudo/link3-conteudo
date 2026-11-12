@@ -13,6 +13,8 @@ const db = criarDb({ url: config.supabaseUrl, key: config.supabaseKey });
 const drive = criarDrive({ credentials: config.googleCredentials, oauth: config.googleOAuth });
 const { processar } = criarEtapas({ db, drive, workDir: config.workDir,
   ...(modulo1Ativo() ? { planejar: criarPlanejadorM1(), lote: criarLote({ db, drive, workDir: config.workDir }) } : {}) });
+const soltos = await db.liberarMeus(config.workerId).catch(() => []);
+if (soltos.length) console.log(`devolvidos para a fila depois do reinício: #${soltos.join(', #')}`);
 let parar = false;
 for (const s of ['SIGINT', 'SIGTERM']) process.on(s, () => { console.log('encerrando depois do pedido atual…'); parar = true; });
 
