@@ -31,6 +31,7 @@ const PROMPT = `Você edita reels para uma agência de marketing. Recebe a trans
 - "remover": trechos que não podem ir ao ar, como lista de pares [primeira, ultima] com os números das palavras. Remova: erros de gravação e comentários fora do roteiro ("ai, não ficou bom", "corta", "de novo", "espera"), frases começadas e abandonadas que são repetidas logo depois (fica só a última versão completa) e conversa com quem está filmando. Não remova conteúdo bom. Se não houver nada, devolva [].
 - "titulo": gancho curto para aparecer no topo nos primeiros segundos (máx. 6 palavras, sem emoji, sem aspas, sem promessa que o vídeo não cumpre). Use o assunto real da fala que fica no vídeo.
 - "copy": legenda do post no Instagram no tom de voz da marca: 1ª linha que prende, 2 a 5 frases curtas, um CTA da lista da marca (se houver) e até 5 hashtags do assunto ou da marca do cliente.
+Se o pedido trouxer um roteiro: o vídeo pode ter vários takes da mesma fala. Mantenha só um take de cada fala do roteiro (o último completo e sem erro) e remova os outros takes e tudo o que estiver fora do roteiro.
 A copy é do cliente: nunca cite a agência, quem editou ou o pedido interno da equipe. Siga as regras da marca. Nunca invente preço, prazo, dado ou nome que não esteja na fala ou nas informações da marca.
 Responda só com JSON: {"remover": [[0, 3]], "titulo": "...", "copy": "..."}`;
 
@@ -73,5 +74,40 @@ export async function gancoECopy({ texto, palavras = null, cliente = {}, comando
     titulo: String(saida.titulo || '').trim(), copy: String(saida.copy || '').trim(),
     tokens: { entrada: ent, saida: sai },
     usd: (ent * config.precoClaudeEntrada + sai * config.precoClaudeSaida) / 1e6,
+  };
+}
+
+const PROMPT_LOTE = `Você organiza a edição de reels de uma agência. Recebe o documento de roteiros do cliente e a lista de vídeos brutos de uma pasta (número, nome e a fala transcrita de cada um, na ordem em que foram gravados).
+Para cada roteiro do documento, diga quais vídeos pertencem a ele, na ordem em que devem entrar no reel. Um vídeo pode ser um take repetido da mesma fala: inclua todos os takes daquela fala (a edição escolhe o melhor depois). Não use o mesmo vídeo em dois roteiros. Vídeos sem relação com nenhum roteiro (bastidores, testes, falas soltas) ficam em "sobras".
+Para cada reel, devolva também o texto do roteiro correspondente, copiado do documento.
+Responda só com JSON: {"reels": [{"titulo": "nome curto do roteiro", "roteiro": "texto do roteiro", "videos": [3, 4, 5]}], "sobras": [1, 2]}`;
+
+export async function agruparPorRoteiro({ roteiros, videos, cliente = {}, comando = '' }, { fetchImpl = fetch } = {}) {
+  if (!config.anthropicKey) throw new Error('ANTHROPIC_API_KEY não configurada no worker');
+  const lista = videos.map((v) => `#${v.n} ${v.nome} (${Math.round(v.duracao || 0)} s): ${v.fala ? v.fala : '[sem fala]'}`).join('\n');
+  const r = await fetchImpl('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'x-api-key': config.anthropicKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+    body: JSON.stringify({
+      model: config.modeloClaude, max_tokens: 8000, system: PROMPT_LOTE,
+      messages: [{ role: 'user', content: `Marca: ${cliente.nome || '-'}\n${comando ? `Pedido da equipe: ${comando}\n` : ''}\nDOCUMENTO DE ROTEIROS:\n${roteiros}\n\nVÍDEOS DA PASTA:\n${lista}` }],
+    }),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(`Claude falhou (${r.status}): ${j.error?.message || 'sem detalhe'}`);
+  const bruto = (j.content || []).filter((c) => c.type === 'text').map((c) => c.text).join('');
+  const m = bruto.match(/\{[\s\S]*\}/);
+  let saida;
+  try { saida = JSON.parse(m ? m[0] : bruto); } catch { throw new Error('Claude não devolveu JSON válido ao separar os roteiros'); }
+  const validos = new Set(videos.map((v) => v.n)), usados = new Set();
+  const reels = (saida.reels || []).map((x) => ({
+    titulo: String(x.titulo || '').trim() || 'Roteiro',
+    roteiro: String(x.roteiro || '').trim(),
+    videos: (x.videos || []).map(Number).filter((n) => validos.has(n) && !usados.has(n) && usados.add(n)),
+  })).filter((x) => x.videos.length);
+  const ent = j.usage?.input_tokens || 0, sai = j.usage?.output_tokens || 0;
+  return {
+    reels, sobras: videos.map((v) => v.n).filter((n) => !usados.has(n)),
+    tokens: { entrada: ent, saida: sai }, usd: (ent * config.precoClaudeEntrada + sai * config.precoClaudeSaida) / 1e6,
   };
 }

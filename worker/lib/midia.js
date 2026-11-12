@@ -60,3 +60,24 @@ export async function montarEdicao(entrada, saida, { trechos, ass, fontsDir, log
   await rodar(config.ffmpeg, args);
   return saida;
 }
+
+// junta vários brutos (takes) num só, já em 9:16 e no mesmo formato, na ordem recebida
+export async function juntarBrutos(arquivos, saida) {
+  const infos = [];
+  for (const a of arquivos) infos.push(await medir(a));
+  const args = ['-y'];
+  arquivos.forEach((a) => args.push('-i', a));
+  const partes = [], rotulos = [];
+  infos.forEach((info, k) => {
+    partes.push(`[${k}:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1,fps=30,format=yuv420p[v${k}]`);
+    partes.push(info.temAudio
+      ? `[${k}:a]aformat=sample_rates=48000:channel_layouts=stereo[a${k}]`
+      : `anullsrc=r=48000:cl=stereo,atrim=duration=${info.duracao}[a${k}]`);
+    rotulos.push(`[v${k}][a${k}]`);
+  });
+  partes.push(`${rotulos.join('')}concat=n=${arquivos.length}:v=1:a=1[v][a]`);
+  args.push('-filter_complex', partes.join(';'), '-map', '[v]', '-map', '[a]', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18',
+    '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', saida);
+  await rodar(config.ffmpeg, args);
+  return saida;
+}

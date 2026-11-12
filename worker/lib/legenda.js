@@ -11,6 +11,14 @@ export function corAss(hex, alfa = 0) {
   return `&H${a}${ok.slice(4, 6)}${ok.slice(2, 4)}${ok.slice(0, 2)}`.toUpperCase();
 }
 
+// texto legível sobre uma cor de fundo (preto ou branco, pelo contraste)
+export function contraste(hex) {
+  const h = String(hex || '').replace('#', '');
+  if (!/^[0-9a-f]{6}$/i.test(h)) return '#FFFFFF';
+  const [r, g, b] = [0, 2, 4].map((k) => { const c = parseInt(h.slice(k, k + 2), 16) / 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.4 ? '#111111' : '#FFFFFF';
+}
+
 // cor para troca dentro do texto: {\c&HBBGGRR&}
 const corTexto = (hex) => corAss(hex).replace(/^&H00/, '&H') + '&';
 
@@ -50,7 +58,7 @@ export function gerarAss({ palavras = [], duracao, kit = {}, fonte = 'DejaVu San
   const textoOv = corTexto(cores.texto || '#FFFFFF');
   const fundoCaixa = corAss(cores.fundo || '#000000', 0.35);
   const fundoTitulo = corAss(cores.principal || '#F0C41D');
-  const textoTitulo = corAss(cores.fundo || '#111111');
+  const textoTitulo = corAss(cores.texto_titulo || contraste(cores.principal || '#F0C41D'));
   const caixa = est.caixa ? 3 : 1; // 3 = caixa atrás do texto, 1 = contorno
   const alinhamento = { baixo: 2, meio: 5, cima: 8 }[est.posicao] || 2;
   const margemV = est.posicao === 'baixo' ? 420 : est.posicao === 'cima' ? 360 : 0;

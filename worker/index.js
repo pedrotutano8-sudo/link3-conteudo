@@ -1,6 +1,7 @@
 // Worker da Link3: pega o próximo pedido, processa e volta para a fila.
 import { config, conferir, modulo1Ativo } from './lib/config.js';
 import { criarPlanejadorM1 } from './lib/modulo1.js';
+import { criarLote } from './lib/lote.js';
 import { criarDb } from './lib/db.js';
 import { criarDrive } from './lib/drive.js';
 import { criarEtapas } from './lib/etapas.js';
@@ -9,8 +10,9 @@ const falta = conferir();
 if (falta.length) { console.error('Faltam variáveis de ambiente:', falta.join(', ')); process.exit(1); }
 
 const db = criarDb({ url: config.supabaseUrl, key: config.supabaseKey });
-const drive = criarDrive({ credentials: config.googleCredentials });
-const { processar } = criarEtapas({ db, drive, workDir: config.workDir, ...(modulo1Ativo() ? { planejar: criarPlanejadorM1() } : {}) });
+const drive = criarDrive({ credentials: config.googleCredentials, oauth: config.googleOAuth });
+const { processar } = criarEtapas({ db, drive, workDir: config.workDir,
+  ...(modulo1Ativo() ? { planejar: criarPlanejadorM1(), lote: criarLote({ db, drive, workDir: config.workDir }) } : {}) });
 let parar = false;
 for (const s of ['SIGINT', 'SIGTERM']) process.on(s, () => { console.log('encerrando depois do pedido atual…'); parar = true; });
 

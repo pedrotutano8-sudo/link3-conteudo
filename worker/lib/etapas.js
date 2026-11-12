@@ -3,7 +3,7 @@
 // Módulo 1 (planejarM1): transcrição, corte de pausas, legenda dinâmica, gancho e copy.
 import fs from 'node:fs';
 import path from 'node:path';
-import { medir, montarComLogo, montarEdicao, rodar } from './midia.js';
+import { medir, montarComLogo, montarEdicao, rodar, juntarBrutos } from './midia.js';
 import { gerarAss } from './legenda.js';
 
 const extensao = (nome, mime) => path.extname(nome || '') || ({ 'video/quicktime': '.mov', 'video/mp4': '.mp4' }[mime] || '.mp4');
@@ -14,7 +14,7 @@ export async function planejarBase({ info, kit }) {
   return { roteiro: { versao: 'base', duracao_final: info.duracao, logo: Boolean(kit?.logo_id), formato: '1080x1920' }, custo: {} };
 }
 
-export function criarEtapas({ db, drive, workDir, planejar = planejarBase, log = console.log }) {
+export function criarEtapas({ db, drive, workDir, planejar = planejarBase, lote = null, log = console.log }) {
   const pasta = (job) => { const d = path.join(workDir, job.id); fs.mkdirSync(d, { recursive: true }); return d; };
   const estadoArq = (job) => path.join(pasta(job), 'estado.json');
   const ler = (job) => { try { return JSON.parse(fs.readFileSync(estadoArq(job), 'utf8')); } catch { return {}; } };
@@ -23,6 +23,24 @@ export function criarEtapas({ db, drive, workDir, planejar = planejarBase, log =
   async function garantirBruto(job) {
     const e = ler(job);
     if (e.bruto && fs.existsSync(e.bruto)) return e;
+    // reel com vários takes (veio de um lote): baixa todos e junta na ordem
+    if (Array.isArray(job.origens) && job.origens.length > 1) {
+      await db.atualizar(job.id, 'baixando');
+      const locais = [];
+      for (const [k, o] of job.origens.entries()) {
+        const meta = await drive.meta(o.id);
+        const dest = path.join(pasta(job), `take-${String(k).padStart(2, '0')}${extensao(meta.name, meta.mimeType)}`);
+        await drive.baixar(o.id, dest);
+        locais.push(dest);
+      }
+      const bruto = path.join(pasta(job), 'bruto.mp4');
+      await juntarBrutos(locais, bruto);
+      locais.forEach((l) => fs.rmSync(l, { force: true }));
+      await db.atualizar(job.id, 'preparando', {}, `Baixados e juntados ${locais.length} takes`);
+      const info = await medir(bruto);
+      gravar(job, { bruto, nome: job.origem_nome || 'roteiro', info });
+      return ler(job);
+    }
     if (!job.origem_drive_id) throw new Error('Pedido sem arquivo do Drive');
     await db.atualizar(job.id, 'baixando');
     const meta = await drive.meta(job.origem_drive_id);
@@ -105,6 +123,10 @@ export function criarEtapas({ db, drive, workDir, planejar = planejarBase, log =
   }
 
   async function processar(job) {
+    if (job.tipo === 'lote') {
+      if (!lote) throw new Error('Pedido em lote precisa do Módulo 1 ligado (chaves de IA no servidor)');
+      return lote(job);
+    }
     if (job.tipo !== 'reel') throw new Error('Carrossel e post entram no Módulo 2 (a partir de 01/12)');
     switch (job.status) {
       case 'na_fila': case 'planejando': return planejarERenderizar(job);

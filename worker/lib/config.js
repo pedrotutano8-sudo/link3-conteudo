@@ -20,6 +20,8 @@ export const config = {
   modeloClaude: process.env.MODELO_CLAUDE || 'claude-sonnet-5-5',
   precoClaudeEntrada: Number(process.env.PRECO_CLAUDE_ENTRADA || 3),   // US$ por milhão de tokens
   precoClaudeSaida: Number(process.env.PRECO_CLAUDE_SAIDA || 15),
+  // login do Google da conta dona das pastas (opcional, para gravar no Drive de conta Gmail)
+  googleOAuth: { clientId: process.env.GOOGLE_OAUTH_CLIENT_ID || '', clientSecret: process.env.GOOGLE_OAUTH_CLIENT_SECRET || '', refreshToken: process.env.GOOGLE_OAUTH_REFRESH_TOKEN || '' },
   pausaMax: Number(process.env.PAUSA_MAX || 0.45),                   // silêncio maior que isso é cortado (s)
 };
 

@@ -1,0 +1,9 @@
+{
+  "cliente": "GNX Group",
+  "logo": "logo-branco.png",
+  "logo_tipo": "logo_branca",
+  "fonte": "Montserrat-Bold.ttf",
+  "cores": { "principal": "#5F27E0", "secundaria": "#16207F", "fundo": "#16207F", "texto": "#FFFFFF" },
+  "estilo_legenda": { "posicao": "baixo", "caixa": false, "destaque": "#F5C542", "palavras_por_linha": 3, "maiusculas": true },
+  "origem": "Proposta Layout - GNX Group (PDF da Link 3, 28/08/2026). Fonte de texto oficial é Garet (paga): usando Montserrat até receber o arquivo."
+}

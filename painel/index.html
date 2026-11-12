@@ -83,7 +83,7 @@ const STATUS = {
   entregue: ['Entregue', 's-ok'], erro: ['Erro', 's-erro'], cancelado: ['Cancelado', 's-fila'],
 };
 const tag = (s) => `<span class="tag ${STATUS[s]?.[1] || ''}">${STATUS[s]?.[0] || s}</span>`;
-const TIPO = { reel: 'Reel', carrossel: 'Carrossel', post: 'Post' };
+const TIPO = { reel: 'Reel', carrossel: 'Carrossel', post: 'Post', lote: 'Lote por roteiro' };
 const ASSET = { logo: 'Logo principal', logo_branca: 'Logo branca', simbolo: 'Símbolo', fonte: 'Fonte', vinheta_abertura: 'Vinheta de abertura', vinheta_encerramento: 'Vinheta de encerramento', musica: 'Música', foto: 'Foto', manual: 'Manual de marca', referencia: 'Referência', outro: 'Outro' };
 
 const S = { aba: 'pedidos', perfil: null, clientes: [], kits: {}, jobs: [], filtro: { status: '', cliente: '' }, aberto: null };
@@ -183,6 +183,10 @@ function roteiroSimples(r) {
   const copy = r.copy || r.legenda;
   if (copy) it.push(`<li><b>Legenda do post:</b> <button class="btn sm" onclick="navigator.clipboard.writeText(this.nextElementSibling.innerText).then(() => toast('Legenda copiada'))">Copiar</button><div style="white-space:pre-wrap;margin-top:6px">${esc(copy)}</div></li>`);
   if (r.cta) it.push(`<li><b>CTA:</b> ${esc(r.cta)}</li>`);
+  if (r.versao === 'lote') {
+    const reels = (r.reels || []).map((x) => `<li><b>#${esc(x.numero ?? '')} ${esc(x.titulo)}</b> · ${x.takes.length} take(s): ${x.takes.map(esc).join(', ')}</li>`).join('');
+    return `<p class="small">Roteiro lido: ${esc((r.roteiro_arquivo || []).join(', '))}</p><ul style="margin:0;padding-left:18px">${reels}</ul>${(r.sobras || []).length ? `<p class="small mute">Vídeos sem roteiro (não usados): ${r.sobras.map(esc).join(', ')}</p>` : ''}`;
+  }
   if (r.versao === 'base') it.push('<li class="mute">Edição básica: enquadramento 9:16 e logo (sem IA).</li>');
   return it.length ? `<ul style="margin:0;padding-left:18px">${it.join('')}</ul>` : `<pre class="small" style="white-space:pre-wrap">${esc(JSON.stringify(r, null, 2))}</pre>`;
 }
@@ -241,17 +245,21 @@ function renderNovo() {
     <label class="f">Cliente</label><select name="cliente" required><option value="">Escolha o cliente</option>${ativos.map((c) => `<option value="${c.id}">${esc(c.nome)}${S.kits[c.id] ? '' : ' (sem identidade cadastrada)'}</option>`).join('')}</select>
     <label class="f">Tipo de peça</label><div class="tipos">${Object.entries(TIPO).map(([k, t], i) => `<label><input type="radio" name="tipo" value="${k}" ${i ? '' : 'checked'}>${t}</label>`).join('')}</div>
     <label class="f">Arquivo no Google Drive</label><input name="arquivo" placeholder="Cole o link do vídeo ou da pasta de fotos no Drive">
-    <div class="small mute" style="margin-top:4px">No Drive: botão direito no arquivo → Compartilhar → Copiar link.</div>
+    <div class="small mute" style="margin-top:4px" id="dicaArq">No Drive: botão direito no arquivo → Compartilhar → Copiar link.</div>
     <label class="f">Nome do arquivo (opcional)</label><input name="nome" placeholder="Ex.: depoimento-joao.mp4">
-    <label class="f">Comando</label><textarea name="comando" required placeholder="Ex.: reel de até 45 s, corta as pausas, gancho sobre clareamento nos 3 primeiros segundos, CTA para o WhatsApp no final"></textarea>
+    <label class="f">Comando</label><textarea name="comando" placeholder="Ex.: reel de até 45 s, corta as pausas, gancho sobre clareamento nos 3 primeiros segundos, CTA para o WhatsApp no final"></textarea>
     <div id="avisoKit" class="small" style="margin-top:8px"></div>
     <div class="row" style="margin-top:14px"><span class="grow"></span><button class="btn acc">Enviar para a fila</button></div></form>`;
   const f = $('#fNovo');
+  const dicas = { lote: 'Cole o link da PASTA com os vídeos brutos e o documento de roteiros (.docx, .pdf ou Google Docs). O sistema cria 1 pedido de reel por roteiro, juntando os takes de cada um.' };
+  f.querySelectorAll('input[name=tipo]').forEach((r) => (r.onchange = () => { $('#dicaArq').textContent = dicas[f.tipo.value] || 'No Drive: botão direito no arquivo → Compartilhar → Copiar link.'; f.comando.placeholder = f.tipo.value === 'lote' ? 'Opcional: instrução para todos os reels do lote. Ex.: até 60 s, CTA para o site' : 'Ex.: reel de até 45 s, corta as pausas, gancho sobre clareamento nos 3 primeiros segundos, CTA para o WhatsApp no final'; }));
   f.cliente.onchange = () => { $('#avisoKit').innerHTML = f.cliente.value && !S.kits[f.cliente.value] ? '<span style="color:var(--amber)">Este cliente ainda não tem identidade cadastrada: a peça sai sem logo e com cores padrão.</span>' : ''; };
   f.onsubmit = async (e) => {
     e.preventDefault();
     const tipo = f.tipo.value, arq = idDrive(f.arquivo.value);
     if (tipo === 'reel' && !arq) return toast('Cole o link do vídeo bruto no Drive');
+    if (tipo === 'lote' && !arq) return toast('Cole o link da pasta com os vídeos e o roteiro');
+    if (tipo !== 'lote' && !f.comando.value.trim()) return toast('Escreva o comando do pedido');
     const btn = f.querySelector('button.acc'); btn.disabled = true;
     const { data, error } = await sb.from('jobs').insert({ client_id: f.cliente.value, tipo, origem_drive_id: arq || null, origem_nome: f.nome.value.trim() || null, comando: f.comando.value.trim(), created_by: S.perfil.id }).select('id').single();
     btn.disabled = false;

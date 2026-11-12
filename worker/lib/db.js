@@ -10,6 +10,7 @@ export function criarDb({ url, key }) {
     atualizar: async (id, status, campos = {}, mensagem = null) => ok(await sb.rpc('atualizar_job', { p_job: id, p_status: status, p_campos: campos, p_mensagem: mensagem })),
     falhar: async (id, mensagem) => ok(await sb.rpc('falhar_job', { p_job: id, p_mensagem: mensagem })),
     perguntar: async (id, pergunta, opcoes) => ok(await sb.rpc('perguntar', { p_job: id, p_pergunta: pergunta, p_opcoes: opcoes || null })),
+    criarJobs: async (linhas) => ok(await sb.from('jobs').insert(linhas).select('id, numero')),
     cliente: async (id) => ok(await sb.from('clients').select('*').eq('id', id).single()),
     kit: async (clientId) => ok(await sb.from('brand_kits').select('*').eq('client_id', clientId).maybeSingle()),
     asset: async (id) => ok(await sb.from('brand_assets').select('*').eq('id', id).single()),
