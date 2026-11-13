@@ -1,8 +1,8 @@
 // Acabamento do reel: imagens de apoio (B-roll) da pasta da marca e trilha de fundo.
-// B-roll: a pasta do Drive cadastrada no kit (estilo.pasta_broll_id) é baixada uma vez, cada clipe ganha uma
+// B-roll: a pasta do Drive cadastrada no kit (acabamento.pasta_broll_id) é baixada uma vez, cada clipe ganha uma
 // descrição (Claude olhando um quadro) e o catálogo fica em cache no servidor. No planejamento o Claude escolhe
 // 2 ou 3 trechos da fala para cobrir com os clipes que combinam.
-// Trilha: arquivo da pasta de trilhas do servidor (TRILHAS_DIR); o kit pode fixar uma (estilo.trilha).
+// Trilha: arquivo da pasta de trilhas do servidor (TRILHAS_DIR); o kit pode fixar uma (acabamento.trilha).
 import fs from 'node:fs';
 import path from 'node:path';
 import { config } from './config.js';
@@ -44,7 +44,7 @@ export function criarAcabamento({ drive, ia, workDir, log = console.log }) {
 
   // onde entram os clipes (tempos do vídeo final, já cortado)
   async function planejarBroll({ kit, palavras, duracao }) {
-    const pastaId = kit?.estilo?.pasta_broll_id;
+    const pastaId = kit?.acabamento?.pasta_broll_id;
     if (!pastaId || !palavras?.length) return { broll: [], custo: { usd: 0, entrada: 0, saida: 0 } };
     const { clipes, custo } = await catalogo(pastaId);
     if (!clipes.length) return { broll: [], custo };
@@ -70,7 +70,7 @@ export function criarAcabamento({ drive, ia, workDir, log = console.log }) {
   // arquivos locais dos clipes escolhidos (baixa de novo se o cache sumiu)
   async function arquivosBroll(kit, broll) {
     if (!broll?.length) return [];
-    const pastaId = kit?.estilo?.pasta_broll_id;
+    const pastaId = kit?.acabamento?.pasta_broll_id;
     const dir = path.join(workDir, '_broll', pastaId || 'sem-pasta');
     fs.mkdirSync(dir, { recursive: true });
     const saida = [];
@@ -85,13 +85,13 @@ export function criarAcabamento({ drive, ia, workDir, log = console.log }) {
   return { planejarBroll, arquivosBroll };
 }
 
-// trilha: a fixada no kit (estilo.trilha) ou a primeira da pasta de trilhas do servidor
+// trilha: a fixada no kit (acabamento.trilha) ou a primeira da pasta de trilhas do servidor
 export function escolherTrilha(kit) {
   const dir = config.trilhasDir;
   if (!dir || !fs.existsSync(dir)) return null;
   const lista = fs.readdirSync(dir).filter((f) => /\.(mp3|wav|m4a|aac|ogg)$/i.test(f)).sort();
   if (!lista.length) return null;
-  const fixa = kit?.estilo?.trilha;
+  const fixa = kit?.acabamento?.trilha;
   if (fixa === 'nenhuma') return null;
   const nome = (fixa && lista.find((f) => f === fixa || f.startsWith(fixa))) || lista[0];
   return path.join(dir, nome);
