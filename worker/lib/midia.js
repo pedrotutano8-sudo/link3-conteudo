@@ -13,20 +13,38 @@ export function rodar(cmd, args, { comErro = false } = {}) {
 }
 
 // silêncios pelo ÁUDIO (não pelo texto): limiar relativo ao volume médio da fala
-export async function detectarSilencios(arquivo, { minimo = 0.25, abaixo = 16 } = {}) {
-  const vol = await rodar(config.ffmpeg, ['-hide_banner', '-i', arquivo, '-vn', '-af', 'volumedetect', '-f', 'null', '-'], { comErro: true });
-  const media = Number((vol.match(/mean_volume:\s*(-?[\d.]+) dB/) || [])[1]);
-  const limiar = Math.max(-50, Math.min(-26, (Number.isFinite(media) ? media : -30) - abaixo));
-  const log = await rodar(config.ffmpeg, ['-hide_banner', '-i', arquivo, '-vn', '-af', `silencedetect=noise=${limiar.toFixed(1)}dB:d=${minimo}`, '-f', 'null', '-'], { comErro: true });
-  const silencios = [];
-  let ini = null;
-  for (const linha of log.split('\n')) {
-    const a = linha.match(/silence_start:\s*(-?[\d.]+)/), b = linha.match(/silence_end:\s*(-?[\d.]+)/);
-    if (a) ini = Math.max(0, Number(a[1]));
-    if (b && ini !== null) { silencios.push([ini, Number(b[1])]); ini = null; }
+// Silêncios pelo nível do áudio, mesmo critério do kit Edição Sem Editor: energia a cada 10 ms, suavizada em 50 ms;
+// o limite fica no meio do caminho entre o ruído de fundo (10% mais baixos) e a fala típica (mediana), então funciona
+// em sala barulhenta também. Respiração e estalos curtos (até 120 ms) não quebram uma pausa.
+export async function detectarSilencios(arquivo, { minimo = 0.25 } = {}) {
+  const { spawn } = await import('node:child_process');
+  const pcm = await new Promise((ok, falha) => {
+    const p = spawn(config.ffmpeg, ['-v', 'error', '-i', arquivo, '-vn', '-ac', '1', '-ar', '16000', '-f', 'f32le', '-']);
+    const partes = []; let erro = '';
+    p.stdout.on('data', (d) => partes.push(d));
+    p.stderr.on('data', (d) => { erro += d; });
+    p.on('error', falha);
+    p.on('close', (c) => (c === 0 ? ok(Buffer.concat(partes)) : falha(new Error(`ffmpeg saiu com código ${c}: ${erro.slice(-200)}`))));
+  });
+  const a = new Float32Array(pcm.buffer, pcm.byteOffset, Math.floor(pcm.length / 4));
+  const J = 160, db = [];
+  for (let i = 0; i + J <= a.length; i += J) { let e = 0; for (let k = i; k < i + J; k++) e += a[k] * a[k]; db.push(10 * Math.log10(e / J + 1e-12)); }
+  if (!db.length) return { silencios: [], limiar: null, media: null };
+  const liso = db.map((_, i) => { let e = 0, n = 0; for (let k = Math.max(0, i - 2); k <= Math.min(db.length - 1, i + 2); k++) { e += 10 ** (db[k] / 10); n++; } return 10 * Math.log10(e / n); });
+  const ordem = [...liso].sort((x, y) => x - y);
+  const p10 = ordem[Math.floor(ordem.length * 0.1)], p50 = ordem[Math.floor(ordem.length * 0.5)];
+  const limiar = p10 + 0.5 * (p50 - p10);
+  const mudo = liso.map((v) => v < limiar);
+  for (let i = 0, j; i < mudo.length; i = j) {
+    j = i; while (j < mudo.length && mudo[j] === mudo[i]) j++;
+    if (!mudo[i] && i > 0 && j < mudo.length && j - i <= 12) for (let k = i; k < j; k++) mudo[k] = true;
   }
-  if (ini !== null) silencios.push([ini, Infinity]);
-  return { silencios, limiar, media };
+  const silencios = [];
+  for (let i = 0, j; i < mudo.length; i = j) {
+    j = i; while (j < mudo.length && mudo[j] === mudo[i]) j++;
+    if (mudo[i] && (j - i) / 100 >= minimo) silencios.push([i / 100, j >= mudo.length ? Infinity : j / 100]);
+  }
+  return { silencios, limiar: +limiar.toFixed(1), media: +p50.toFixed(1) };
 }
 
 export async function medir(arquivo) {

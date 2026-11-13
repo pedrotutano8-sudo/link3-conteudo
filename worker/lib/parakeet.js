@@ -50,9 +50,12 @@ export function tokensParaPalavras(r, deslocamento = 0) {
   const palavras = [];
   (r.tokens || []).forEach((tok, k) => {
     const ini = deslocamento + Number(r.timestamps[k]);
-    const fim = ini + Number(r.durations?.[k] ?? 0.08);
-    const novo = /^\s/.test(tok) || !palavras.length;
+    // a duração do último token antes de uma pausa costuma engolir o silêncio: limita a 0,4 s
+    const fim = ini + Math.min(0.4, Number(r.durations?.[k] ?? 0.08));
     const txt = tok.replace(/^\s+/, '');
+    // número grudado na palavra anterior ("tinha34") vira palavra própria
+    const ant = palavras[palavras.length - 1]?.p || '';
+    const novo = /^\s/.test(tok) || !palavras.length || (/^\d/.test(txt) && /\p{L}$/u.test(ant));
     if (!txt) return;
     if (novo && !/^[.,!?;:…]+$/.test(txt)) palavras.push({ p: txt, i: ini, f: fim });
     else { const u = palavras[palavras.length - 1]; if (u) { u.p += txt; u.f = Math.max(u.f, fim); } }

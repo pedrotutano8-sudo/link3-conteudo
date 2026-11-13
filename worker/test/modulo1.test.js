@@ -171,6 +171,7 @@ test('Parakeet: tokens viram palavras com tempo e o áudio é dividido em pedaç
   const p = tokensParaPalavras(r, 10);
   assert.deepStrictEqual(p.map((w) => w.p), ['No', 'preguntes', 'que,', 'GNX.']);
   assert.equal(p[1].i, 10.24); assert.equal(p[1].f, 10.8);
+  assert.deepStrictEqual(tokensParaPalavras({ tokens: [' tinha', '3', '4', ' anos'], timestamps: [0, 0.3, 0.4, 0.6], durations: [0.2, 0.1, 2.0, 0.2] }).map((w) => [w.p, w.f]), [['tinha', 0.2], ['34', 0.8], ['anos', 0.8]]);
   const s = new Float32Array(16000 * 40).fill(0.3);
   s.fill(0, 16000 * 9, 16000 * 9.5);
   const c = pontosDeCorte(s);
