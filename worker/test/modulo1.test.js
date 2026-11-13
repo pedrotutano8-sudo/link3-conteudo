@@ -203,3 +203,10 @@ test('pausa curta no meio da frase não deixa pedacinho isolado', async () => {
   const c = calcularCortes(palavras, { duracao: 40, silencios: [[30.4, 34.2], [34.6, 34.95]] });
   assert.ok(c.trechos.filter(([a]) => a > 33).every(([a, b]) => b - a >= 0.8), JSON.stringify(c.trechos));
 });
+
+test('muleta curta cortada que deixaria pedacinho isolado volta', async () => {
+  const { calcularCortes } = await import('../lib/cortes.js');
+  const palavras = [{ p: 'que', i: 20, f: 20.3 }, { p: 'pouco', i: 34.26, f: 34.42 }, { p: 'menos', i: 34.42, f: 34.58 }, { p: 'de', i: 34.82, f: 34.9 }, { p: 'dois', i: 34.9, f: 35.06 }, { p: 'anos', i: 35.06, f: 36.0 }];
+  const c = calcularCortes(palavras, { duracao: 40, silencios: [[20.5, 34.15]], cortesForcados: [[34.6, 34.8]] });
+  assert.ok(c.trechos.filter(([a]) => a > 33).every(([a, b]) => b - a >= 0.8), JSON.stringify(c.trechos));
+});

@@ -133,7 +133,9 @@ export function calcularCortes(palavras, { duracao, pausa = 0.35, respiro = 0.1,
   for (const t of soltos) {
     const u = final[final.length - 1];
     const gap = u ? t[0] - u[1] : Infinity;
-    if (u && gap <= 0.45 && (t[1] - t[0] < 0.8 || u[1] - u[0] < 0.8) && soSilencio(u[1], t[0])) u[1] = t[1];
+    // (muleta curta que a revisão cortou, como um "a" solto, também volta: incomoda menos que o piscar)
+    const muletaCurta = gap <= 0.35 && cortesForcados.some(([x, y]) => y - x <= 0.4 && x <= u[1] + 0.05 && y >= t[0] - 0.05);
+    if (u && (t[1] - t[0] < 0.8 || u[1] - u[0] < 0.8) && (muletaCurta || (gap <= 0.45 && soSilencio(u[1], t[0])))) u[1] = t[1];
     else final.push([...t]);
   }
 
