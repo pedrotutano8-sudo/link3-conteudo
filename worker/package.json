@@ -1,7 +1,7 @@
 {
   "name": "link3-worker",
   "version": "1.0.0",
-  "description": "Motor de edição Link3: fila de pedidos, Drive, render",
+  "description": "Motor de edi\u00e7\u00e3o Link3: fila de pedidos, Drive, render",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
@@ -10,7 +10,8 @@
   "license": "UNLICENSED",
   "dependencies": {
     "@supabase/supabase-js": "^2.119.0",
-    "google-auth-library": "^11.3.4"
+    "google-auth-library": "^11.3.4",
+    "sherpa-onnx-node": "2.0.1"
   },
   "type": "module",
   "private": true

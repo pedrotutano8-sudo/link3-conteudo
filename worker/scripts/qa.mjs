@@ -3,7 +3,8 @@
 import fs from 'node:fs';
 import { createClient } from '@supabase/supabase-js';
 import { config } from '../lib/config.js';
-import { detectarSilencios, medir } from '../lib/midia.js';
+import { detectarSilencios, medir, medirVolume } from '../lib/midia.js';
+import { repeticoes } from '../lib/cortes.js';
 import { extrairAudio, transcrever } from '../lib/ia.js';
 
 const sb = createClient(config.supabaseUrl, config.supabaseKey, { auth: { persistSession: false } });
@@ -17,11 +18,12 @@ for (const numero of process.argv.slice(2).map(Number)) {
   const { silencios } = await detectarSilencios(v, { minimo: 0.35 });
   await extrairAudio(v, a);
   const t = await transcrever(a);
-  const norm = (p) => p.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
-  const rep = t.palavras.filter((w, k, x) => k > 0 && norm(w.p) && norm(w.p) === norm(x[k - 1].p)).map((w) => w.p);
+  const rep = [...repeticoes(t.palavras)].map((k) => t.palavras[k].p);
+  const vol = await medirVolume(v);
   console.log(`\n#${numero} ${j.origem_nome || ''}`);
   console.log(`  ${Math.round(j.roteiro?.duracao_bruto || 0)} s → ${info.duracao.toFixed(1)} s · pausas > 0,35 s que sobraram: ${silencios.length} ${silencios.map(([x, y]) => `${x.toFixed(1)}-${(Number.isFinite(y) ? y : info.duracao).toFixed(1)}`).join(' ')}`);
-  console.log(`  palavras repetidas coladas: ${rep.length ? rep.join(', ') : 'nenhuma'}`);
+  console.log(`  transcrição: ${j.roteiro?.qa?.motor || '?'} · volume: ${vol.I} LUFS, pico ${vol.TP} dB (meta -14 e abaixo de -1)`);
+  console.log(`  repetição colada que sobrou: ${rep.length ? rep.join(', ') : 'nenhuma'}`);
   console.log(`  removido pela IA: ${(j.roteiro?.removido || []).map((r) => `"${r.slice(0, 50)}"`).join(' · ') || '-'}`);
   console.log(`  FALA FINAL: ${t.texto}`);
   fs.rmSync(v, { force: true }); fs.rmSync(a, { force: true });

@@ -17,6 +17,10 @@ export const config = {
   openaiKey: process.env.OPENAI_API_KEY || '',
   anthropicKey: process.env.ANTHROPIC_API_KEY || '',
   modeloTranscricao: process.env.MODELO_TRANSCRICAO || 'whisper-1',
+  // Parakeet local (padrão quando o modelo existe na pasta): mesmo motor do kit Edição Sem Editor
+  asr: process.env.ASR || '',
+  parakeetDir: process.env.PARAKEET_DIR || '/models/parakeet',
+  parakeetThreads: Number(process.env.PARAKEET_THREADS || 3),
   // ElevenLabs Scribe (opcional): transcrição literal, preferida quando a chave existe
   elevenlabsKey: process.env.ELEVENLABS_API_KEY || '',
   modeloScribe: process.env.MODELO_SCRIBE || 'scribe_v2',
@@ -30,7 +34,7 @@ export const config = {
   pausaMax: Number(process.env.PAUSA_MAX || 0.35),                   // silêncio maior que isso é cortado (s)
 };
 
-export const modulo1Ativo = () => Boolean((config.openaiKey || config.elevenlabsKey) && config.anthropicKey);
+export const modulo1Ativo = () => Boolean(config.anthropicKey && (config.openaiKey || config.elevenlabsKey || fs.existsSync(config.parakeetDir + '/tokens.txt')));
 
 export function conferir() {
   const falta = [];

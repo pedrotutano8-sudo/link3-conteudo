@@ -3,7 +3,7 @@
 // Módulo 1 (planejarM1): transcrição, corte de pausas, legenda dinâmica, gancho e copy.
 import fs from 'node:fs';
 import path from 'node:path';
-import { medir, montarComLogo, montarEdicao, rodar, juntarBrutos } from './midia.js';
+import { medir, montarComLogo, montarEdicao, rodar, juntarBrutos, acertarVolume } from './midia.js';
 import { gerarAss } from './legenda.js';
 
 const extensao = (nome, mime) => path.extname(nome || '') || ({ 'video/quicktime': '.mov', 'video/mp4': '.mp4' }[mime] || '.mp4');
@@ -84,7 +84,9 @@ export function criarEtapas({ db, drive, workDir, planejar = planejarBase, lote 
     const f = await fonteLocal(job, kit);
     const ass = path.join(pasta(job), 'legenda.ass');
     fs.writeFileSync(ass, gerarAss({ palavras: roteiro.palavras, duracao: roteiro.duracao_final, kit: kit || {}, titulo: roteiro.titulo, ...(f.familia ? { fonte: f.familia } : {}) }));
-    return montarEdicao(e.bruto, saida, { trechos: roteiro.trechos, ass, fontsDir: f.fontsDir, logo, previa, temAudio: e.info.temAudio });
+    await montarEdicao(e.bruto, saida, { trechos: roteiro.trechos, ass, fontsDir: f.fontsDir, logo, previa, temAudio: e.info.temAudio });
+    if (e.info.temAudio) await acertarVolume(saida).catch(() => null);
+    return saida;
   }
 
   async function planejarERenderizar(job, { ajuste } = {}) {

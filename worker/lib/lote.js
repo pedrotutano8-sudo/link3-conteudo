@@ -65,6 +65,7 @@ export function criarLote({ db, drive, workDir, ia = iaPadrao, log = console.log
           await ia.extrairAudio(local, audio);
           const t = await ia.transcrever(audio, { dica: `${clienteNome}. ${roteiros}` });
           fala = t.texto; custo.segundos_audio += t.segundos || info.duracao;
+          custo.usd_transcricao = (custo.usd_transcricao || 0) + ((t.segundos || info.duracao) / 60) * (t.usdMinuto ?? 0.006);
         }
         return { n: k + 1, id: v.id, nome: v.name, duracao: info.duracao, fala };
       } catch (e) {
@@ -76,7 +77,7 @@ export function criarLote({ db, drive, workDir, ia = iaPadrao, log = console.log
         if (++feitos % 5 === 0 || feitos === videos.length) await db.atualizar(job.id, 'preparando', {}, `Transcritos ${feitos} de ${videos.length}`).catch(() => {});
       }
     });
-    custo.custo_ia_usd += (custo.segundos_audio / 60) * (config.elevenlabsKey ? config.precoScribeMinuto : 0.006);
+    custo.custo_ia_usd += custo.usd_transcricao ?? (custo.segundos_audio / 60) * 0.006; delete custo.usd_transcricao;
     if (falhas.length === videos.length) throw new Error(`Nenhum vídeo foi transcrito (${falhas[0]})`);
     if (falhas.length) await db.atualizar(job.id, 'preparando', {}, `${falhas.length} vídeo(s) sem transcrição: ${falhas.slice(0, 3).join(' · ')}`);
 

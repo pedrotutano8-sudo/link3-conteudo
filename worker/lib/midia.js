@@ -49,9 +49,34 @@ export async function montarComLogo(entrada, saida, { logo, previa = false, larg
   return saida;
 }
 
+export const VOZ = 'highpass=f=80,afftdn=nf=-30,equalizer=f=3000:t=q:w=1.2:g=2,acompressor=threshold=-20dB:ratio=2.5:attack=15:release=150:makeup=2,loudnorm=I=-14.5:TP=-1.5:LRA=7,aresample=48000';
+
+// volume do arquivo final (EBU R128): loudness integrado (LUFS) e pico verdadeiro (dBTP)
+export async function medirVolume(arquivo) {
+  const { spawnSync } = await import('node:child_process');
+  const r = spawnSync(config.ffmpeg, ['-hide_banner', '-nostats', '-i', arquivo, '-vn', '-af', 'ebur128=peak=true', '-f', 'null', '-'], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+  const txt = String(r.stderr || '');
+  const resumo = txt.slice(txt.lastIndexOf('Summary:'));
+  const num = (re) => { const m = resumo.match(re); return m ? Number(m[1]) : NaN; };
+  return { I: num(/I:\s*(-?[\d.]+)\s*LUFS/), TP: num(/Peak:\s*(-?[\d.]+)\s*dBFS/) };
+}
+
+// meta do kit: -14 LUFS (tolerância 0,5) e pico abaixo de -1 dBTP; fora disso regrava só o áudio
+export async function acertarVolume(arquivo, { meta = -14, tolerancia = 0.5 } = {}) {
+  const antes = await medirVolume(arquivo);
+  if (!Number.isFinite(antes.I) || (Math.abs(antes.I - meta) <= tolerancia && !(antes.TP > -1))) return { ...antes, ganho: 0 };
+  const ganho = meta - antes.I;
+  const tmp = arquivo.replace(/(\.\w+)$/, '.vol$1');
+  await rodar(config.ffmpeg, ['-y', '-i', arquivo, '-map', '0:v', '-map', '0:a', '-c:v', 'copy', '-af',
+    `volume=${ganho.toFixed(2)}dB,alimiter=limit=0.794:attack=5:release=50:level=false,aresample=48000`, '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', tmp]);
+  const fs = await import('node:fs');
+  fs.renameSync(tmp, arquivo);
+  return { ...(await medirVolume(arquivo)), ganho };
+}
+
 // Módulo 1: corta as pausas (trechos), monta 9:16, aplica logo e queima a legenda (.ass) num passo só.
 // Acabamento de cada corte: microtransição no áudio (sem estalo) e zoom alternado na imagem (o corte vira "punch-in").
-export async function montarEdicao(entrada, saida, { trechos, ass, fontsDir, logo, previa = false, larguraLogo = 160, margem = 48, temAudio = true, zoom = 1.1 } = {}) {
+export async function montarEdicao(entrada, saida, { trechos, ass, fontsDir, logo, previa = false, larguraLogo = 160, margem = 48, temAudio = true, zoom = 1.1, tratarVoz = true } = {}) {
   const [w, h] = previa ? [540, 960] : [1080, 1920];
   const lw = Math.round(larguraLogo * (w / 1080)), m = Math.round(margem * (w / 1080));
   const partes = [], rotulos = [];
@@ -74,6 +99,8 @@ export async function montarEdicao(entrada, saida, { trechos, ass, fontsDir, log
   });
   const n = rotulos.length;
   partes.push(`${rotulos.join('')}concat=n=${n}:v=1:a=${temAudio ? 1 : 0}[v]${temAudio ? '[ac]' : ''}`);
+  // voz tratada, igual ao kit Edição Sem Editor: corta grave, reduz ruído, dá presença, comprime leve e normaliza
+  if (temAudio && tratarVoz) partes.push(`[ac]${VOZ}[ao]`);
   const args = ['-y', '-i', entrada];
   let atual = '[v]';
   if (logo) { args.push('-i', logo); partes.push(`[1:v]scale=${lw}:-1[l];${atual}[l]overlay=W-w-${m}:${m}[vl]`); atual = '[vl]'; }
@@ -83,7 +110,7 @@ export async function montarEdicao(entrada, saida, { trechos, ass, fontsDir, log
     atual = '[vs]';
   }
   args.push('-filter_complex', partes.join(';'), '-map', atual);
-  if (temAudio) args.push('-map', '[ac]', '-c:a', 'aac', '-b:a', '160k');
+  if (temAudio) args.push('-map', tratarVoz ? '[ao]' : '[ac]', '-c:a', 'aac', '-b:a', '192k', '-ar', '48000');
   args.push('-c:v', 'libx264', '-preset', previa ? 'veryfast' : 'medium', '-crf', previa ? '28' : '20', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', saida);
   await rodar(config.ffmpeg, args);
   return saida;

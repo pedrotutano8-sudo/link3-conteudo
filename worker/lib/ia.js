@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { config } from './config.js';
 import { rodar } from './midia.js';
+import { parakeetDisponivel, transcreverParakeet } from './parakeet.js';
 
 // chamada com nova tentativa quando a API está ocupada (429, 5xx, 529)
 export async function comRetentativa(fetchImpl, url, opts, tentativas = 4) {
@@ -63,10 +64,16 @@ export async function transcreverScribe(audio, { fetchImpl = fetch, dica = '' } 
   return { texto: palavras.map((w) => w.p).join(' ') || j.text || '', palavras, segundos, motor: 'scribe', usdMinuto: config.precoScribeMinuto };
 }
 
-// motor de transcrição: Scribe quando houver chave (mais literal e acerta nomes), senão Whisper.
-// Se o Scribe cair, segue no Whisper para não travar o pedido.
+// motor de transcrição (ASR=parakeet|scribe|whisper; padrão: Parakeet se o modelo estiver no servidor).
+// Parakeet = o mesmo do kit Edição Sem Editor, local e sem custo. Se ele falhar, segue no Whisper para não travar.
 export async function transcrever(audio, opts = {}) {
-  if (config.elevenlabsKey) {
+  const motor = config.asr || (parakeetDisponivel() ? 'parakeet' : config.elevenlabsKey ? 'scribe' : 'whisper');
+  if (motor === 'parakeet') {
+    try { return await transcreverParakeet(audio); }
+    catch (e) { if (!config.openaiKey) throw e; console.warn(`[asr] Parakeet: ${e.message} → usando Whisper`); }
+    return transcreverWhisper(audio, opts);
+  }
+  if (motor === 'scribe' && config.elevenlabsKey) {
     try { return await transcreverScribe(audio, opts); }
     catch (e) { if (!config.openaiKey) throw e; console.warn(`[asr] ${e.message} → usando Whisper`); }
   }

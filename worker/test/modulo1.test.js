@@ -164,3 +164,17 @@ test('repetição colada sai sem depender da IA (e não corta as duas cópias)',
   assert.equal(fica('foi isso. Isso mesmo'), 'foi isso. Isso mesmo');
   assert.equal(fica('tra- trabalho aqui'), 'trabalho aqui');
 });
+
+test('Parakeet: tokens viram palavras com tempo e o áudio é dividido em pedaços de até 12 s', async () => {
+  const { tokensParaPalavras, pontosDeCorte } = await import('../lib/parakeet.js');
+  const r = { tokens: [' No', ' preg', 'unt', 'es', ' que', ',', ' GNX', '.'], timestamps: [0, 0.24, 0.48, 0.64, 0.8, 1.0, 1.2, 1.5], durations: [0.24, 0.24, 0.16, 0.16, 0.16, 0.08, 0.3, 0.08] };
+  const p = tokensParaPalavras(r, 10);
+  assert.deepStrictEqual(p.map((w) => w.p), ['No', 'preguntes', 'que,', 'GNX.']);
+  assert.equal(p[1].i, 10.24); assert.equal(p[1].f, 10.8);
+  const s = new Float32Array(16000 * 40).fill(0.3);
+  s.fill(0, 16000 * 9, 16000 * 9.5);
+  const c = pontosDeCorte(s);
+  assert.equal(c[0], 0); assert.equal(c[c.length - 1], s.length);
+  for (let k = 1; k < c.length; k++) assert.ok(c[k] - c[k - 1] <= 12 * 16000);
+  assert.ok(Math.abs(c[1] / 16000 - 9.25) < 0.3, 'corta no silêncio');
+});
