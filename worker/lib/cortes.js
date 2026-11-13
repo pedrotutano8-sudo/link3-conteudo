@@ -125,7 +125,17 @@ export function calcularCortes(palavras, { duracao, pausa = 0.35, respiro = 0.1,
   const arred = (x) => Math.round(x * 1000) / 1000;
   // pedaço sem nenhuma palavra dentro (sobra de borda ou de outro take) sai: vira um "piscar" sem sentido no vídeo
   const temFala = ([a, b]) => fala.some((w) => (w.i + w.f) / 2 >= a && (w.i + w.f) / 2 <= b);
-  const final = semForcados.map(([a, b]) => [arred(a), arred(b)]).filter(([a, b]) => b - a > 0.08).filter((t) => temFala(t));
+  const soltos = semForcados.map(([a, b]) => [arred(a), arred(b)]).filter(([a, b]) => b - a > 0.08).filter((t) => temFala(t));
+  // pedaço curto demais (< 0,8 s) vira um "piscar" na tela: se a pausa que o separa do vizinho é curta (até 0,45 s)
+  // e é só silêncio, devolve a pausa e junta os dois. Assim nenhum corte deixa um pedacinho isolado.
+  const soSilencio = (a, b) => silencios.some(([x, y]) => x <= a + 0.05 && (Number.isFinite(y) ? y : Infinity) >= b - 0.05);
+  const final = [];
+  for (const t of soltos) {
+    const u = final[final.length - 1];
+    const gap = u ? t[0] - u[1] : Infinity;
+    if (u && gap <= 0.45 && (t[1] - t[0] < 0.8 || u[1] - u[0] < 0.8) && soSilencio(u[1], t[0])) u[1] = t[1];
+    else final.push([...t]);
+  }
 
   // tempo no vídeo cortado
   const inicioNoCorte = [];

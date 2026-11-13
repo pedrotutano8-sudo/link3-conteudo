@@ -100,11 +100,18 @@ export async function montarEdicao(entrada, saida, { trechos, ass, fontsDir, log
   const partes = [], rotulos = [];
   const lista = trechos?.length ? trechos : [[0, null]];
   const fade = 0.015;
+  // enquadramento alterna a cada corte (punch-in), mas só troca em trecho de pelo menos 1,2 s:
+  // trecho curto mantém o enquadramento do anterior para não "piscar"
+  let zAnt = zoom;
+  const zs = lista.map(([a, b], k) => {
+    const dur = b == null ? Infinity : b - a;
+    const z = lista.length > 1 && dur >= 1.2 ? (zAnt === 1 ? zoom : 1) : (k === 0 ? 1 : zAnt);
+    zAnt = z; return z;
+  });
   lista.forEach(([a, b], k) => {
     const fim = b == null ? '' : `:end=${b}`;
     const dur = b == null ? null : b - a;
-    // trechos ímpares entram mais próximos (punch-in), com o rosto mais perto do terço de cima
-    const z = lista.length > 1 && k % 2 === 1 && (dur == null || dur > 0.7) ? zoom : 1;
+    const z = zs[k];
     const enquadrar = z === 1
       ? `scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h}`
       : `scale=${Math.round(w * z)}:${Math.round(h * z)}:force_original_aspect_ratio=increase,crop=${w}:${h}:(iw-${w})/2:(ih-${h})*0.35`;

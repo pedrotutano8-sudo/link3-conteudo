@@ -196,3 +196,10 @@ test('pedaço sem fala (sobra de outro take) não entra no vídeo', async () => 
   const c = calcularCortes(palavras, { duracao: 40, silencios: [[16.95, 17.5], [17.95, 34.1]] });
   assert.ok(!c.trechos.some(([a, b]) => a >= 17.4 && b <= 18.0), JSON.stringify(c.trechos));
 });
+
+test('pausa curta no meio da frase não deixa pedacinho isolado', async () => {
+  const { calcularCortes } = await import('../lib/cortes.js');
+  const palavras = [{ p: 'a', i: 30.0, f: 30.3 }, { p: 'pouco', i: 34.26, f: 34.42 }, { p: 'menos', i: 34.42, f: 34.58 }, { p: 'de', i: 34.9, f: 35.0 }, { p: 'dois', i: 35.0, f: 35.2 }, { p: 'anos', i: 35.2, f: 36.0 }];
+  const c = calcularCortes(palavras, { duracao: 40, silencios: [[30.4, 34.2], [34.6, 34.95]] });
+  assert.ok(c.trechos.filter(([a]) => a > 33).every(([a, b]) => b - a >= 0.8), JSON.stringify(c.trechos));
+});
