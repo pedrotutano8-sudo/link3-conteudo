@@ -229,7 +229,7 @@ export async function revisarFala({ palavras }, { fetchImpl = fetch } = {}) {
 }
 
 // chamada simples ao Claude que devolve JSON (texto e, se vier, imagens em base64)
-async function claudeJson({ system, texto, imagens = [], max = 1500 }, { fetchImpl = fetch } = {}) {
+async function claudeJson({ system, texto, imagens = [], max = 4000 }, { fetchImpl = fetch } = {}) {
   if (!config.anthropicKey) throw new Error('ANTHROPIC_API_KEY não configurada no worker');
   const content = [...imagens.map((b64) => ({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: b64 } })), { type: 'text', text: texto }];
   const r = await comRetentativa(fetchImpl, 'https://api.anthropic.com/v1/messages', {
@@ -254,7 +254,7 @@ export async function descreverBroll(clipes, opts) {
   const r = await claudeJson({
     system: 'Você cataloga imagens de apoio (B-roll) para um editor de vídeo. Para cada imagem, na ordem, escreva em português uma descrição curta e concreta do que aparece (lugar, pessoas, ação, objetos) em até 15 palavras. Responda só com JSON: ["descrição 1", "descrição 2", ...].',
     texto: `São ${clipes.length} imagens, uma por clipe, na ordem: ${clipes.map((c, k) => `${k}: ${c.nome}`).join(' · ')}`,
-    imagens: clipes.map((c) => c.quadroB64), max: 1500,
+    imagens: clipes.map((c) => c.quadroB64), max: 4000,
   }, opts);
   const lista = Array.isArray(r.saida) ? r.saida : [];
   return { descricoes: clipes.map((_, k) => String(lista[k] || '')), tokens: r.tokens, usd: r.usd };
@@ -273,7 +273,7 @@ export async function escolherBroll({ palavras, clipes }, opts) {
   const r = await claudeJson({
     system: PROMPT_BROLL,
     texto: `CLIPES DISPONÍVEIS:\n${clipes.map((c, k) => `${k}: ${c.descricao} (${c.duracao.toFixed(1)} s)`).join('\n')}\n\nFALA DO VÍDEO (índice:palavra@segundo):\n${palavras.map((w, k) => `${k}:${w.p}@${w.i.toFixed(1)}`).join(' ')}`,
-    max: 800,
+    max: 4000,
   }, opts);
   const lista = Array.isArray(r.saida?.broll) ? r.saida.broll : [];
   return { escolhas: lista, bruto: r.bruto, tokens: r.tokens, usd: r.usd };
