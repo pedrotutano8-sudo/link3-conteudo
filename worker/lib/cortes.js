@@ -63,14 +63,29 @@ function subtrair(trechos, cortes, { minimo = 0, folga = 0 } = {}) {
   return saida;
 }
 
-// silêncios do áudio sem os núcleos das palavras
-function silenciosLivres(silencios, fala, duracao) {
-  let livres = silencios.map(([a, b]) => [a, Number.isFinite(b) ? b : duracao ?? a + 1000]);
-  const nucleos = fala.map(nucleo);
-  return livres.flatMap(([a, b]) => subtrair([[a, b]], nucleos));
+// silêncios do áudio que podem sair: o tempo das palavras da transcrição é impreciso (o Parakeet chega a marcar a
+// palavra 0,5 s antes de ela ser dita, dentro da pausa — medido no vídeo da Fernanda), então vale o áudio.
+// O detector já ignora estalos de até 120 ms e usa limite adaptado ao ruído da sala, então fala baixa não vira pausa.
+// Margens: 0,15 s depois da fala (o fim da palavra cai baixinho) e 0,1 s antes.
+function silenciosLivres(silencios, fala, duracao, { minimo = 0.35, depois = 0.15, antes = 0.1 } = {}) {
+  return silencios
+    .map(([a, b]) => [a, Number.isFinite(b) ? b : duracao ?? a + 1000])
+    .filter(([a, b]) => b - a >= minimo)
+    .map(([a, b]) => [a === 0 ? 0 : a + depois, duracao && b >= duracao - 0.01 ? b : b - antes])
+    .filter(([a, b]) => b - a > 0.05);
 }
 
-export function calcularCortes(palavras, { duracao, pausa = 0.35, respiro = 0.1, tirarVicios = true, silencios = [], silencioMin = 0.3, folga = 0.08, cortesForcados = [] } = {}) {
+// borda de trecho que caiu perto de uma pausa real do áudio é puxada para a pausa (a transcrição erra a borda da palavra)
+function alinharNoAudio(trechos, silencios, { raio = 0.3, depois = 0.15, antes = 0.1 } = {}) {
+  if (!silencios.length) return trechos;
+  return trechos.map(([ini, fim]) => {
+    const fimFala = silencios.map(([a]) => a).filter((a) => Math.abs(a - fim) <= raio && a > ini).sort((x, y) => Math.abs(x - fim) - Math.abs(y - fim))[0];
+    const iniFala = silencios.map(([, b]) => b).filter((b) => Number.isFinite(b) && Math.abs(b - ini) <= raio && b < fim).sort((x, y) => Math.abs(x - ini) - Math.abs(y - ini))[0];
+    return [iniFala !== undefined ? Math.max(0, iniFala - antes) : ini, fimFala !== undefined ? fimFala + depois : fim];
+  }).filter(([a, b]) => b - a > 0.08);
+}
+
+export function calcularCortes(palavras, { duracao, pausa = 0.35, respiro = 0.1, tirarVicios = true, silencios = [], silencioMin = 0.35, cortesForcados = [] } = {}) {
   const fala = (palavras || [])
     .filter((w) => Number.isFinite(w.i) && Number.isFinite(w.f) && w.f >= w.i)
     .filter((w) => !(tirarVicios && ehVicio(w.p)))
@@ -97,7 +112,8 @@ export function calcularCortes(palavras, { duracao, pausa = 0.35, respiro = 0.1,
     else juntos.push([...t]);
   }
   // silêncio medido no áudio dentro da fala (a transcrição costuma "esticar" as palavras por cima das pausas)
-  const semSilencio = subtrair(juntos, silenciosLivres(silencios, fala, duracao), { minimo: silencioMin, folga });
+  const alinhados = alinharNoAudio(juntos, silencios.filter(([a, b]) => (Number.isFinite(b) ? b : Infinity) - a >= 0.15));
+  const semSilencio = subtrair(alinhados, silenciosLivres(silencios, fala, duracao, { minimo: silencioMin }));
   // trechos que a revisão mandou tirar (repetição, muleta, recomeço) saem sem folga
   const semForcados = subtrair(semSilencio, cortesForcados);
   const arred = (x) => Math.round(x * 1000) / 1000;

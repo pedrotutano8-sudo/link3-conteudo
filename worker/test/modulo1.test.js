@@ -179,3 +179,14 @@ test('Parakeet: tokens viram palavras com tempo e o áudio é dividido em pedaç
   for (let k = 1; k < c.length; k++) assert.ok(c[k] - c[k - 1] <= 12 * 16000);
   assert.ok(Math.abs(c[1] / 16000 - 9.25) < 0.3, 'corta no silêncio');
 });
+
+test('pausa do áudio sai mesmo quando a transcrição estica a palavra por cima dela (critério do kit)', async () => {
+  const { calcularCortes } = await import('../lib/cortes.js');
+  const palavras = [{ p: 'pelo', i: 17.62, f: 17.86 }, { p: 'reconhecimento,', i: 17.86, f: 18.98 }, { p: 'acho', i: 19.06, f: 19.22 }, { p: 'que', i: 19.6, f: 19.8 }];
+  const c = calcularCortes(palavras, { duracao: 25, silencios: [[18.63, 19.52]] });
+  const mantido = (t) => c.trechos.some(([a, b]) => t >= a && t <= b);
+  assert.ok(mantido(18.6) && mantido(19.6), 'fala fica');
+  assert.ok(!mantido(19.0), 'a pausa sai');
+});
+  assert.ok(c2.trechos.some(([a, b]) => 2.1 >= a && 2.1 <= b));
+});
