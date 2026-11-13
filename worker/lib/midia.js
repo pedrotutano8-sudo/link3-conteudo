@@ -49,7 +49,7 @@ export async function montarComLogo(entrada, saida, { logo, previa = false, larg
   return saida;
 }
 
-export const VOZ = 'highpass=f=80,afftdn=nf=-30,equalizer=f=3000:t=q:w=1.2:g=2,acompressor=threshold=-20dB:ratio=2.5:attack=15:release=150:makeup=2,loudnorm=I=-14.5:TP=-1.5:LRA=7,aresample=48000';
+export const VOZ = 'highpass=f=80,afftdn=nf=-30,equalizer=f=3000:t=q:w=1.2:g=2,acompressor=threshold=-20dB:ratio=2.5:attack=15:release=150:makeup=2,loudnorm=I=-14.5:TP=-1.5:LRA=7,aformat=sample_rates=48000:channel_layouts=stereo';
 
 // volume do arquivo final (EBU R128): loudness integrado (LUFS) e pico verdadeiro (dBTP)
 export async function medirVolume(arquivo) {
@@ -68,7 +68,7 @@ export async function acertarVolume(arquivo, { meta = -14, tolerancia = 0.5 } = 
   const ganho = meta - antes.I;
   const tmp = arquivo.replace(/(\.\w+)$/, '.vol$1');
   await rodar(config.ffmpeg, ['-y', '-i', arquivo, '-map', '0:v', '-map', '0:a', '-c:v', 'copy', '-af',
-    `volume=${ganho.toFixed(2)}dB,alimiter=limit=0.794:attack=5:release=50:level=false,aresample=48000`, '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', tmp]);
+    `volume=${ganho.toFixed(2)}dB,alimiter=limit=0.794:attack=5:release=50:level=false,aformat=sample_rates=48000:channel_layouts=stereo`, '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', tmp]);
   const fs = await import('node:fs');
   fs.renameSync(tmp, arquivo);
   return { ...(await medirVolume(arquivo)), ganho };
