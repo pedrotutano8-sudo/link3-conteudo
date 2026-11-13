@@ -99,8 +99,6 @@ export async function montarEdicao(entrada, saida, { trechos, ass, fontsDir, log
   });
   const n = rotulos.length;
   partes.push(`${rotulos.join('')}concat=n=${n}:v=1:a=${temAudio ? 1 : 0}[v]${temAudio ? '[ac]' : ''}`);
-  // voz tratada, igual ao kit Edição Sem Editor: corta grave, reduz ruído, dá presença, comprime leve e normaliza
-  if (temAudio && tratarVoz) partes.push(`[ac]${VOZ}[ao]`);
   const args = ['-y', '-i', entrada];
   let atual = '[v]';
   if (logo) { args.push('-i', logo); partes.push(`[1:v]scale=${lw}:-1[l];${atual}[l]overlay=W-w-${m}:${m}[vl]`); atual = '[vl]'; }
@@ -110,9 +108,16 @@ export async function montarEdicao(entrada, saida, { trechos, ass, fontsDir, log
     atual = '[vs]';
   }
   args.push('-filter_complex', partes.join(';'), '-map', atual);
-  if (temAudio) args.push('-map', tratarVoz ? '[ao]' : '[ac]', '-c:a', 'aac', '-b:a', '192k', '-ar', '48000');
+  if (temAudio) args.push('-map', '[ac]', '-c:a', 'aac', '-b:a', '192k', '-ar', '48000');
   args.push('-c:v', 'libx264', '-preset', previa ? 'veryfast' : 'medium', '-crf', previa ? '28' : '20', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', saida);
   await rodar(config.ffmpeg, args);
+  // voz tratada, igual ao kit Edição Sem Editor: corta grave, reduz ruído, dá presença, comprime leve e normaliza.
+  // Passo separado só no áudio (o ffmpeg 5.1 do servidor recusa esse filtro dentro do filter_complex com a logo).
+  if (temAudio && tratarVoz) {
+    const tmp = saida.replace(/(\.\w+)$/, '.voz$1');
+    await rodar(config.ffmpeg, ['-y', '-i', saida, '-map', '0:v', '-map', '0:a', '-c:v', 'copy', '-af', VOZ, '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', tmp]);
+    (await import('node:fs')).renameSync(tmp, saida);
+  }
   return saida;
 }
 
