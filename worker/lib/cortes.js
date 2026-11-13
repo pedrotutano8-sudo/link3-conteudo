@@ -13,8 +13,8 @@ export function ehVicio(p) {
 // · palavra/expressão repetida colada ("pela pela", "a gente a gente", "que eu que eu") → sai a 1ª
 // · palavra interrompida ("tra-", "conec—") → sai
 // Repetição enfática fica ("muito, muito", "não, não"), e nada atravessa fim de frase.
-const ENFASE = new Set(['muito', 'bem', 'sim', 'nao', 'ja', 'mais', 'cada', 'pouco', 'bom']);
-const normal = (p) => String(p || '').toLowerCase().normalize('NFD').replace(/\p{M}/gu, '').replace(/[^\p{L}\p{N}]/gu, '');
+const ENFASE = new Set(['muito', 'bem', 'sim', 'não', 'já', 'mais', 'cada', 'pouco', 'bom']);
+const normal = (p) => String(p || '').toLowerCase().replace(/[^\p{L}\p{N}]/gu, ''); // acento conta: "e é" não é repetição
 export function repeticoes(palavras) {
   const fora = new Set();
   const n = palavras.length;

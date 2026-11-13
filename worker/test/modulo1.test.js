@@ -163,6 +163,7 @@ test('repetição colada sai sem depender da IA (e não corta as duas cópias)',
   assert.equal(fica('muito, muito bom'), 'muito, muito bom');
   assert.equal(fica('foi isso. Isso mesmo'), 'foi isso. Isso mesmo');
   assert.equal(fica('tra- trabalho aqui'), 'trabalho aqui');
+  assert.equal(fica('e é essa construção'), 'e é essa construção');
 });
 
 test('Parakeet: tokens viram palavras com tempo e o áudio é dividido em pedaços de até 12 s', async () => {
