@@ -66,8 +66,8 @@ function subtrair(trechos, cortes, { minimo = 0, folga = 0 } = {}) {
 // silêncios do áudio que podem sair: o tempo das palavras da transcrição é impreciso (o Parakeet chega a marcar a
 // palavra 0,5 s antes de ela ser dita, dentro da pausa — medido no vídeo da Fernanda), então vale o áudio.
 // O detector já ignora estalos de até 120 ms e usa limite adaptado ao ruído da sala, então fala baixa não vira pausa.
-// Margens: 0,15 s depois da fala (o fim da palavra cai baixinho) e 0,1 s antes.
-function silenciosLivres(silencios, fala, duracao, { minimo = 0.35, depois = 0.15, antes = 0.1 } = {}) {
+// Margens: 0,12 s depois da fala (o fim da palavra cai baixinho) e 0,08 s antes: sobra no máximo 0,2 s de respiro.
+function silenciosLivres(silencios, fala, duracao, { minimo = 0.3, depois = 0.12, antes = 0.08 } = {}) {
   return silencios
     .map(([a, b]) => [a, Number.isFinite(b) ? b : duracao ?? a + 1000])
     .filter(([a, b]) => b - a >= minimo)
@@ -85,7 +85,7 @@ function alinharNoAudio(trechos, silencios, { raio = 0.3, depois = 0.15, antes =
   }).filter(([a, b]) => b - a > 0.08);
 }
 
-export function calcularCortes(palavras, { duracao, pausa = 0.35, respiro = 0.1, tirarVicios = true, silencios = [], silencioMin = 0.35, cortesForcados = [] } = {}) {
+export function calcularCortes(palavras, { duracao, pausa = 0.35, respiro = 0.1, tirarVicios = true, silencios = [], silencioMin = 0.3, cortesForcados = [] } = {}) {
   const fala = (palavras || [])
     .filter((w) => Number.isFinite(w.i) && Number.isFinite(w.f) && w.f >= w.i)
     .filter((w) => !(tirarVicios && ehVicio(w.p)))
