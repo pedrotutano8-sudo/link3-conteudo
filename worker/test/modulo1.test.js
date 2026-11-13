@@ -189,3 +189,10 @@ test('pausa do áudio sai mesmo quando a transcrição estica a palavra por cima
   assert.ok(mantido(18.6) && mantido(19.6), 'fala fica');
   assert.ok(!mantido(19.0), 'a pausa sai');
 });
+
+test('pedaço sem fala (sobra de outro take) não entra no vídeo', async () => {
+  const { calcularCortes } = await import('../lib/cortes.js');
+  const palavras = [{ p: 'gestão', i: 15.0, f: 15.6 }, { p: 'de', i: 15.7, f: 15.8 }, { p: 'pessoas.', i: 15.9, f: 16.8 }, { p: 'Pouco', i: 34.3, f: 34.6 }];
+  const c = calcularCortes(palavras, { duracao: 40, silencios: [[16.95, 17.5], [17.95, 34.1]] });
+  assert.ok(!c.trechos.some(([a, b]) => a >= 17.4 && b <= 18.0), JSON.stringify(c.trechos));
+});

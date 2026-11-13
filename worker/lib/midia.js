@@ -148,9 +148,9 @@ export async function montarEdicao(entrada, saida, { trechos, ass, fontsDir, log
   return saida;
 }
 
-// trilha de fundo: entra baixa (cerca de 12 dB abaixo da voz), abaixa mais quando a pessoa fala (ducking),
+// trilha de fundo: entra baixa (cerca de 9 dB abaixo da voz), abaixa mais quando a pessoa fala (ducking),
 // entra com fade de 0,6 s e sai com fade de 1,5 s no fim do vídeo
-export async function misturarTrilha(arquivo, trilha, { nivel = -27 } = {}) {
+export async function misturarTrilha(arquivo, trilha, { nivel = Number(process.env.TRILHA_NIVEL || -23) } = {}) {
   const info = await medir(arquivo);
   const dur = info.duracao;
   const m = await medirVolume(trilha);

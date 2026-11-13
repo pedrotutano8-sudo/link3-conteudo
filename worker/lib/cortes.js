@@ -123,7 +123,9 @@ export function calcularCortes(palavras, { duracao, pausa = 0.35, respiro = 0.1,
   // trechos que a revisão mandou tirar (repetição, muleta, recomeço) saem sem folga
   const semForcados = subtrair(semSilencio, cortesForcados);
   const arred = (x) => Math.round(x * 1000) / 1000;
-  const final = semForcados.map(([a, b]) => [arred(a), arred(b)]).filter(([a, b]) => b - a > 0.08);
+  // pedaço sem nenhuma palavra dentro (sobra de borda ou de outro take) sai: vira um "piscar" sem sentido no vídeo
+  const temFala = ([a, b]) => fala.some((w) => (w.i + w.f) / 2 >= a && (w.i + w.f) / 2 <= b);
+  const final = semForcados.map(([a, b]) => [arred(a), arred(b)]).filter(([a, b]) => b - a > 0.08).filter((t) => temFala(t));
 
   // tempo no vídeo cortado
   const inicioNoCorte = [];
