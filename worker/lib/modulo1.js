@@ -82,7 +82,7 @@ export function criarPlanejadorM1({ ia = iaPadrao, acabamento = null } = {}) {
     let broll = [];
     if (acabamento) {
       try {
-        const b = await acabamento.planejarBroll({ kit, palavras: cortes.palavras, duracao: cortes.duracaoFinal });
+        const b = await acabamento.planejarBroll({ kit, job, palavras: cortes.palavras, duracao: cortes.duracaoFinal });
         broll = b.broll;
         custo.custo_ia_usd += b.custo.usd; custo.tokens_entrada += b.custo.entrada; custo.tokens_saida += b.custo.saida;
       } catch (e) { console.warn(`[broll] ${e.message}`); }

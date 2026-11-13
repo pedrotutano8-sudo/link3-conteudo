@@ -266,6 +266,7 @@ Regras:
 - Só cubra frases em que a imagem combina com o que está sendo dito (empresa, estrutura, equipe, operação, escritório, trabalho). Se nenhum clipe combinar com nenhum trecho, devolva lista vazia.
 - Nunca cubra os primeiros 3 segundos (o rosto segura o gancho), nem os últimos 2 segundos, nem o momento em que a pessoa diz o próprio nome ou cargo.
 - Não repita o mesmo clipe e deixe pelo menos 3 segundos de rosto entre uma inserção e outra.
+- Varie: misture vídeos e fotos ([foto]) e prefira o que ainda não foi usado em outro reel.
 Responda só com JSON: {"broll": [{"clipe": número do clipe, "de": índice da primeira palavra, "ate": índice da última palavra}]}`;
 
 // escolhe onde entram os clipes de apoio, em cima da fala já cortada (tempos do vídeo final)

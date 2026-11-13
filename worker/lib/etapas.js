@@ -85,7 +85,7 @@ export function criarEtapas({ db, drive, workDir, planejar = planejarBase, lote 
     const f = await fonteLocal(job, kit);
     const ass = path.join(pasta(job), 'legenda.ass');
     fs.writeFileSync(ass, gerarAss({ palavras: roteiro.palavras, duracao: roteiro.duracao_final, kit: kit || {}, titulo: roteiro.titulo, ...(f.familia ? { fonte: f.familia } : {}) }));
-    const broll = acabamento ? await acabamento.arquivosBroll(kit, roteiro.broll).catch((err) => { log(`job ${job.id}: B-roll não carregou (${err.message})`); return []; }) : [];
+    const broll = acabamento ? await acabamento.arquivosBroll(kit, roteiro.broll, { previa }).catch((err) => { log(`job ${job.id}: B-roll não carregou (${err.message})`); return []; }) : [];
     await montarEdicao(e.bruto, saida, { trechos: roteiro.trechos, ass, fontsDir: f.fontsDir, logo, previa, temAudio: e.info.temAudio, broll });
     const trilha = e.info.temAudio ? escolherTrilha(kit) : null;
     if (trilha) await misturarTrilha(saida, trilha).catch((err) => log(`job ${job.id}: trilha não entrou (${err.message})`));

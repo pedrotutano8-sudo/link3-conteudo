@@ -39,13 +39,35 @@ export function criarDrive({ credentials, oauth, fetchFn = fetch, token } = {}) 
 
   return {
     async meta(id) {
-      const r = await req(`${API}/files/${encodeURIComponent(id)}?fields=id,name,mimeType,size,parents&supportsAllDrives=true`);
+      const r = await req(`${API}/files/${encodeURIComponent(id)}?fields=id,name,mimeType,size,parents,thumbnailLink&supportsAllDrives=true`);
       return r.json();
     },
     async listar(pastaId) {
       const q = encodeURIComponent(`'${pastaId}' in parents and trashed = false`);
       const r = await req(`${API}/files?q=${q}&fields=files(id,name,mimeType,size,modifiedTime)&orderBy=modifiedTime desc&pageSize=100&supportsAllDrives=true&includeItemsFromAllDrives=true`);
       return (await r.json()).files || [];
+    },
+    // lista completa (com paginação) e metadados de mídia: miniatura, duração e tamanho da imagem
+    async listarMidia(pastaId) {
+      const q = encodeURIComponent(`'${pastaId}' in parents and trashed = false`);
+      const campos = 'nextPageToken,files(id,name,mimeType,size,thumbnailLink,videoMediaMetadata(durationMillis,width,height),imageMediaMetadata(width,height))';
+      const todos = []; let pagina = '';
+      do {
+        const r = await req(`${API}/files?q=${q}&fields=${encodeURIComponent(campos)}&pageSize=200&supportsAllDrives=true&includeItemsFromAllDrives=true${pagina ? `&pageToken=${pagina}` : ''}`);
+        const j = await r.json();
+        todos.push(...(j.files || []));
+        pagina = j.nextPageToken || '';
+      } while (pagina);
+      return todos;
+    },
+    // miniatura do arquivo (o Drive gera até para vídeo e HEIC); tamanho = lado maior em px
+    async miniatura(arquivo, destino, tamanho = 640) {
+      if (!arquivo.thumbnailLink) return null;
+      const url = arquivo.thumbnailLink.replace(/=s\d+$/, '') + `=s${tamanho}`;
+      const r = await fetchFn(url, { headers: await cabecalho(false) });
+      if (!r.ok) return null;
+      fs.writeFileSync(destino, Buffer.from(await r.arrayBuffer()));
+      return destino;
     },
     // Google Docs/Planilhas: exporta como texto
     async exportarTexto(id) {
