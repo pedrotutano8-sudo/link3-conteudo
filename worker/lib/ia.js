@@ -240,11 +240,13 @@ async function claudeJson({ system, texto, imagens = [], max = 1500 }, { fetchIm
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(`Claude falhou (${r.status}): ${j.error?.message || 'sem detalhe'}`);
   const bruto = (j.content || []).filter((c) => c.type === 'text').map((c) => c.text).join('');
-  const m = bruto.match(/[[{][\s\S]*[\]}]/);
+  // aceita JSON puro, em bloco ```json``` ou com texto em volta
+  const tentativas = [bruto, (bruto.match(/```(?:json)?\s*([\s\S]*?)```/) || [])[1], (bruto.match(/\{[\s\S]*\}/) || [])[0], (bruto.match(/\[[\s\S]*\]/) || [])[0]];
   let saida = null;
-  try { saida = JSON.parse(m ? m[0] : bruto); } catch { saida = null; }
+  for (const t of tentativas) { if (!t) continue; try { saida = JSON.parse(t); break; } catch { /* próxima */ } }
+  if (saida === null && process.env.DEBUG_IA) console.warn('[claude] resposta sem JSON:', bruto.slice(0, 400));
   const ent = j.usage?.input_tokens || 0, sai = j.usage?.output_tokens || 0;
-  return { saida, tokens: { entrada: ent, saida: sai }, usd: (ent * config.precoClaudeEntrada + sai * config.precoClaudeSaida) / 1e6 };
+  return { saida, bruto, tokens: { entrada: ent, saida: sai }, usd: (ent * config.precoClaudeEntrada + sai * config.precoClaudeSaida) / 1e6 };
 }
 
 // descreve cada clipe de imagem de apoio (B-roll) a partir de um quadro do meio dele
@@ -274,5 +276,5 @@ export async function escolherBroll({ palavras, clipes }, opts) {
     max: 800,
   }, opts);
   const lista = Array.isArray(r.saida?.broll) ? r.saida.broll : [];
-  return { escolhas: lista, tokens: r.tokens, usd: r.usd };
+  return { escolhas: lista, bruto: r.bruto, tokens: r.tokens, usd: r.usd };
 }
