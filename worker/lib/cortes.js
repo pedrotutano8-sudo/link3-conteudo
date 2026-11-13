@@ -66,12 +66,18 @@ function subtrair(trechos, cortes, { minimo = 0, folga = 0 } = {}) {
 // silêncios do áudio que podem sair: o tempo das palavras da transcrição é impreciso (o Parakeet chega a marcar a
 // palavra 0,5 s antes de ela ser dita, dentro da pausa — medido no vídeo da Fernanda), então vale o áudio.
 // O detector já ignora estalos de até 120 ms e usa limite adaptado ao ruído da sala, então fala baixa não vira pausa.
-// Margens: 0,12 s depois da fala (o fim da palavra cai baixinho) e 0,08 s antes: sobra no máximo 0,2 s de respiro.
+// Margens: 0,12 s depois da fala e 0,08 s antes (sobra 0,2 s no meio da frase); em fim de frase 0,22 + 0,13 (sobra 0,35 s).
 function silenciosLivres(silencios, fala, duracao, { minimo = 0.3, depois = 0.12, antes = 0.08 } = {}) {
   return silencios
     .map(([a, b]) => [a, Number.isFinite(b) ? b : duracao ?? a + 1000])
     .filter(([a, b]) => b - a >= minimo)
-    .map(([a, b]) => [a === 0 ? 0 : a + depois, duracao && b >= duracao - 0.01 ? b : b - antes])
+    .map(([a, b]) => {
+      // fim de frase (ponto) ganha respiro maior, como num corte de editor; no meio da frase o corte é curto
+      const ant = [...fala].reverse().find((w) => w.i < a);
+      const fimFrase = ant && /[.!?…]$/.test(String(ant.p).trim());
+      const d = fimFrase ? depois + 0.1 : depois, x = fimFrase ? antes + 0.05 : antes;
+      return [a === 0 ? 0 : a + d, duracao && b >= duracao - 0.01 ? b : b - x];
+    })
     .filter(([a, b]) => b - a > 0.05);
 }
 

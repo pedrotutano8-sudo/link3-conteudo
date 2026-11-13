@@ -21,6 +21,8 @@ export const config = {
   asr: process.env.ASR || '',
   parakeetDir: process.env.PARAKEET_DIR || '/models/parakeet',
   parakeetThreads: Number(process.env.PARAKEET_THREADS || 3),
+  // trilhas de fundo (mp3/wav com licença para uso comercial), montadas do servidor em /trilhas
+  trilhasDir: process.env.TRILHAS_DIR || '/trilhas',
   // ElevenLabs Scribe (opcional): transcrição literal, preferida quando a chave existe
   elevenlabsKey: process.env.ELEVENLABS_API_KEY || '',
   modeloScribe: process.env.MODELO_SCRIBE || 'scribe_v2',

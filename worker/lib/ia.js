@@ -227,3 +227,52 @@ export async function revisarFala({ palavras }, { fetchImpl = fetch } = {}) {
   const ent = j.usage?.input_tokens || 0, sai = j.usage?.output_tokens || 0;
   return { remover, tokens: { entrada: ent, saida: sai }, usd: (ent * config.precoClaudeEntrada + sai * config.precoClaudeSaida) / 1e6 };
 }
+
+// chamada simples ao Claude que devolve JSON (texto e, se vier, imagens em base64)
+async function claudeJson({ system, texto, imagens = [], max = 1500 }, { fetchImpl = fetch } = {}) {
+  if (!config.anthropicKey) throw new Error('ANTHROPIC_API_KEY não configurada no worker');
+  const content = [...imagens.map((b64) => ({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: b64 } })), { type: 'text', text: texto }];
+  const r = await comRetentativa(fetchImpl, 'https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'x-api-key': config.anthropicKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+    body: JSON.stringify({ model: config.modeloClaude, max_tokens: max, system, messages: [{ role: 'user', content }] }),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(`Claude falhou (${r.status}): ${j.error?.message || 'sem detalhe'}`);
+  const bruto = (j.content || []).filter((c) => c.type === 'text').map((c) => c.text).join('');
+  const m = bruto.match(/[[{][\s\S]*[\]}]/);
+  let saida = null;
+  try { saida = JSON.parse(m ? m[0] : bruto); } catch { saida = null; }
+  const ent = j.usage?.input_tokens || 0, sai = j.usage?.output_tokens || 0;
+  return { saida, tokens: { entrada: ent, saida: sai }, usd: (ent * config.precoClaudeEntrada + sai * config.precoClaudeSaida) / 1e6 };
+}
+
+// descreve cada clipe de imagem de apoio (B-roll) a partir de um quadro do meio dele
+export async function descreverBroll(clipes, opts) {
+  const r = await claudeJson({
+    system: 'Você cataloga imagens de apoio (B-roll) para um editor de vídeo. Para cada imagem, na ordem, escreva em português uma descrição curta e concreta do que aparece (lugar, pessoas, ação, objetos) em até 15 palavras. Responda só com JSON: ["descrição 1", "descrição 2", ...].',
+    texto: `São ${clipes.length} imagens, uma por clipe, na ordem: ${clipes.map((c, k) => `${k}: ${c.nome}`).join(' · ')}`,
+    imagens: clipes.map((c) => c.quadroB64), max: 1500,
+  }, opts);
+  const lista = Array.isArray(r.saida) ? r.saida : [];
+  return { descricoes: clipes.map((_, k) => String(lista[k] || '')), tokens: r.tokens, usd: r.usd };
+}
+
+const PROMPT_BROLL = `Você é editor de reels de empresas. O vídeo é uma pessoa falando para a câmera. Escolha onde entram imagens de apoio (B-roll) por cima da fala, para dar ritmo e ilustrar o que é dito, como um editor profissional faria.
+Regras:
+- 2 ou 3 inserções no total, cada uma cobrindo de 2 a 3,5 segundos de fala.
+- Só cubra frases em que a imagem combina com o que está sendo dito (empresa, estrutura, equipe, operação, escritório, trabalho). Se nenhum clipe combinar com nenhum trecho, devolva lista vazia.
+- Nunca cubra os primeiros 3 segundos (o rosto segura o gancho), nem os últimos 2 segundos, nem o momento em que a pessoa diz o próprio nome ou cargo.
+- Não repita o mesmo clipe e deixe pelo menos 3 segundos de rosto entre uma inserção e outra.
+Responda só com JSON: {"broll": [{"clipe": número do clipe, "de": índice da primeira palavra, "ate": índice da última palavra}]}`;
+
+// escolhe onde entram os clipes de apoio, em cima da fala já cortada (tempos do vídeo final)
+export async function escolherBroll({ palavras, clipes }, opts) {
+  const r = await claudeJson({
+    system: PROMPT_BROLL,
+    texto: `CLIPES DISPONÍVEIS:\n${clipes.map((c, k) => `${k}: ${c.descricao} (${c.duracao.toFixed(1)} s)`).join('\n')}\n\nFALA DO VÍDEO (índice:palavra@segundo):\n${palavras.map((w, k) => `${k}:${w.p}@${w.i.toFixed(1)}`).join(' ')}`,
+    max: 800,
+  }, opts);
+  const lista = Array.isArray(r.saida?.broll) ? r.saida.broll : [];
+  return { escolhas: lista, tokens: r.tokens, usd: r.usd };
+}

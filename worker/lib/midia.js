@@ -94,7 +94,7 @@ export async function acertarVolume(arquivo, { meta = -14, tolerancia = 0.5 } = 
 
 // Módulo 1: corta as pausas (trechos), monta 9:16, aplica logo e queima a legenda (.ass) num passo só.
 // Acabamento de cada corte: microtransição no áudio (sem estalo) e zoom alternado na imagem (o corte vira "punch-in").
-export async function montarEdicao(entrada, saida, { trechos, ass, fontsDir, logo, previa = false, larguraLogo = 160, margem = 48, temAudio = true, zoom = 1.1, tratarVoz = true } = {}) {
+export async function montarEdicao(entrada, saida, { trechos, ass, fontsDir, logo, previa = false, larguraLogo = 160, margem = 48, temAudio = true, zoom = 1.1, tratarVoz = true, broll = [] } = {}) {
   const [w, h] = previa ? [540, 960] : [1080, 1920];
   const lw = Math.round(larguraLogo * (w / 1080)), m = Math.round(margem * (w / 1080));
   const partes = [], rotulos = [];
@@ -118,8 +118,17 @@ export async function montarEdicao(entrada, saida, { trechos, ass, fontsDir, log
   const n = rotulos.length;
   partes.push(`${rotulos.join('')}concat=n=${n}:v=1:a=${temAudio ? 1 : 0}[v]${temAudio ? '[ac]' : ''}`);
   const args = ['-y', '-i', entrada];
-  let atual = '[v]';
-  if (logo) { args.push('-i', logo); partes.push(`[1:v]scale=${lw}:-1[l];${atual}[l]overlay=W-w-${m}:${m}[vl]`); atual = '[vl]'; }
+  let atual = '[v]', entradas = 1;
+  // imagens de apoio por cima da fala (o áudio continua o da pessoa); entram antes da logo e da legenda
+  for (const [k, b] of (broll || []).entries()) {
+    const dur = Math.max(0.5, b.fim - b.inicio);
+    args.push('-ss', String(b.offset || 0), '-t', dur.toFixed(2), '-i', b.arquivo);
+    const ix = entradas++;
+    partes.push(`[${ix}:v]scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h},setsar=1,fps=30,format=yuv420p,setpts=PTS-STARTPTS+${b.inicio}/TB[b${k}]`);
+    partes.push(`${atual}[b${k}]overlay=enable='between(t,${b.inicio},${b.fim})':eof_action=pass[vb${k}]`);
+    atual = `[vb${k}]`;
+  }
+  if (logo) { args.push('-i', logo); const ix = entradas++; partes.push(`[${ix}:v]scale=${lw}:-1[l];${atual}[l]overlay=W-w-${m}:${m}[vl]`); atual = '[vl]'; }
   if (ass) {
     const esc = (s) => s.replace(/\\/g, '/').replace(/:/g, '\\:').replace(/'/g, "\\'");
     partes.push(`${atual}ass=filename='${esc(ass)}'${fontsDir ? `:fontsdir='${esc(fontsDir)}'` : ''}[vs]`);
@@ -137,6 +146,27 @@ export async function montarEdicao(entrada, saida, { trechos, ass, fontsDir, log
     (await import('node:fs')).renameSync(tmp, saida);
   }
   return saida;
+}
+
+// trilha de fundo: entra baixa (cerca de 12 dB abaixo da voz), abaixa mais quando a pessoa fala (ducking),
+// entra com fade de 0,6 s e sai com fade de 1,5 s no fim do vídeo
+export async function misturarTrilha(arquivo, trilha, { nivel = -27 } = {}) {
+  const info = await medir(arquivo);
+  const dur = info.duracao;
+  const m = await medirVolume(trilha);
+  const ganho = Number.isFinite(m.I) ? nivel - m.I : -18;
+  const tmp = arquivo.replace(/(\.\w+)$/, '.trilha$1');
+  const fmt = 'aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo';
+  const filtro = [
+    `[1:a]${fmt},volume=${ganho.toFixed(2)}dB,afade=t=in:d=0.6,afade=t=out:st=${Math.max(0, dur - 1.5).toFixed(2)}:d=1.5[m]`,
+    `[0:a]${fmt},asplit=2[voz][sc]`,
+    `[m][sc]sidechaincompress=threshold=0.03:ratio=4:attack=20:release=400:makeup=1[md]`,
+    `[voz][md]amix=inputs=2:duration=first:dropout_transition=0:normalize=0,${fmt}[a]`,
+  ].join(';');
+  await rodar(config.ffmpeg, ['-y', '-i', arquivo, '-stream_loop', '-1', '-i', trilha, '-filter_complex', filtro,
+    '-map', '0:v', '-map', '[a]', '-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k', '-t', dur.toFixed(3), '-movflags', '+faststart', tmp]);
+  (await import('node:fs')).renameSync(tmp, arquivo);
+  return { ganho };
 }
 
 // junta vários brutos (takes) num só, já em 9:16 e no mesmo formato, na ordem recebida

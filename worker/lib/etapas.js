@@ -3,7 +3,8 @@
 // Módulo 1 (planejarM1): transcrição, corte de pausas, legenda dinâmica, gancho e copy.
 import fs from 'node:fs';
 import path from 'node:path';
-import { medir, montarComLogo, montarEdicao, rodar, juntarBrutos, acertarVolume } from './midia.js';
+import { medir, montarComLogo, montarEdicao, rodar, juntarBrutos, acertarVolume, misturarTrilha } from './midia.js';
+import { escolherTrilha } from './acabamento.js';
 import { gerarAss } from './legenda.js';
 
 const extensao = (nome, mime) => path.extname(nome || '') || ({ 'video/quicktime': '.mov', 'video/mp4': '.mp4' }[mime] || '.mp4');
@@ -14,7 +15,7 @@ export async function planejarBase({ info, kit }) {
   return { roteiro: { versao: 'base', duracao_final: info.duracao, logo: Boolean(kit?.logo_id), formato: '1080x1920' }, custo: {} };
 }
 
-export function criarEtapas({ db, drive, workDir, planejar = planejarBase, lote = null, log = console.log }) {
+export function criarEtapas({ db, drive, workDir, planejar = planejarBase, lote = null, acabamento = null, log = console.log }) {
   const pasta = (job) => { const d = path.join(workDir, job.id); fs.mkdirSync(d, { recursive: true }); return d; };
   const estadoArq = (job) => path.join(pasta(job), 'estado.json');
   const ler = (job) => { try { return JSON.parse(fs.readFileSync(estadoArq(job), 'utf8')); } catch { return {}; } };
@@ -84,7 +85,10 @@ export function criarEtapas({ db, drive, workDir, planejar = planejarBase, lote 
     const f = await fonteLocal(job, kit);
     const ass = path.join(pasta(job), 'legenda.ass');
     fs.writeFileSync(ass, gerarAss({ palavras: roteiro.palavras, duracao: roteiro.duracao_final, kit: kit || {}, titulo: roteiro.titulo, ...(f.familia ? { fonte: f.familia } : {}) }));
-    await montarEdicao(e.bruto, saida, { trechos: roteiro.trechos, ass, fontsDir: f.fontsDir, logo, previa, temAudio: e.info.temAudio });
+    const broll = acabamento ? await acabamento.arquivosBroll(kit, roteiro.broll).catch((err) => { log(`job ${job.id}: B-roll não carregou (${err.message})`); return []; }) : [];
+    await montarEdicao(e.bruto, saida, { trechos: roteiro.trechos, ass, fontsDir: f.fontsDir, logo, previa, temAudio: e.info.temAudio, broll });
+    const trilha = e.info.temAudio ? escolherTrilha(kit) : null;
+    if (trilha) await misturarTrilha(saida, trilha).catch((err) => log(`job ${job.id}: trilha não entrou (${err.message})`));
     if (e.info.temAudio) await acertarVolume(saida).catch(() => null);
     return saida;
   }

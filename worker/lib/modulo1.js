@@ -7,7 +7,7 @@ import { calcularCortes, repeticoes } from './cortes.js';
 import * as iaPadrao from './ia.js';
 import { detectarSilencios, audioEditado } from './midia.js';
 
-export function criarPlanejadorM1({ ia = iaPadrao } = {}) {
+export function criarPlanejadorM1({ ia = iaPadrao, acabamento = null } = {}) {
   return async function planejarM1({ job, cliente, kit, info, ajuste, roteiroAnterior, bruto, pasta }) {
     const custo = { custo_ia_usd: 0, tokens_entrada: 0, tokens_saida: 0, segundos_audio: 0 };
 
@@ -78,6 +78,15 @@ export function criarPlanejadorM1({ ia = iaPadrao } = {}) {
     custo.custo_ia_usd += g.usd;
     custo.tokens_entrada += g.tokens.entrada;
     custo.tokens_saida += g.tokens.saida;
+    // imagens de apoio da pasta da marca por cima da fala (se o kit tiver pasta de B-roll)
+    let broll = [];
+    if (acabamento) {
+      try {
+        const b = await acabamento.planejarBroll({ kit, palavras: cortes.palavras, duracao: cortes.duracaoFinal });
+        broll = b.broll;
+        custo.custo_ia_usd += b.custo.usd; custo.tokens_entrada += b.custo.entrada; custo.tokens_saida += b.custo.saida;
+      } catch (e) { console.warn(`[broll] ${e.message}`); }
+    }
 
     return {
       roteiro: {
@@ -86,6 +95,7 @@ export function criarPlanejadorM1({ ia = iaPadrao } = {}) {
         copy: g.copy,
         trechos: cortes.trechos,
         palavras: cortes.palavras,
+        broll,
         duracao_bruto: info.duracao,
         duracao_final: cortes.duracaoFinal,
         segundos_cortados: cortes.cortado,

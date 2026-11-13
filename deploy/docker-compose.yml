@@ -11,7 +11,7 @@ services:
     build: ../worker
     restart: unless-stopped
     env_file: worker.env
-    volumes: [work:/work]
+    volumes: [work:/work, ../trilhas:/trilhas:ro]   # trilhas de fundo licenciadas: /opt/link3/trilhas
     profiles: ["worker"]   # só sobe com: docker compose --profile worker up -d (depois de preencher worker.env)
 
   caddy:

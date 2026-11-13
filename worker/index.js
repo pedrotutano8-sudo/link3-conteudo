@@ -5,14 +5,17 @@ import { criarLote } from './lib/lote.js';
 import { criarDb } from './lib/db.js';
 import { criarDrive } from './lib/drive.js';
 import { criarEtapas } from './lib/etapas.js';
+import { criarAcabamento } from './lib/acabamento.js';
+import * as ia from './lib/ia.js';
 
 const falta = conferir();
 if (falta.length) { console.error('Faltam variáveis de ambiente:', falta.join(', ')); process.exit(1); }
 
 const db = criarDb({ url: config.supabaseUrl, key: config.supabaseKey });
 const drive = criarDrive({ credentials: config.googleCredentials, oauth: config.googleOAuth });
-const { processar } = criarEtapas({ db, drive, workDir: config.workDir,
-  ...(modulo1Ativo() ? { planejar: criarPlanejadorM1(), lote: criarLote({ db, drive, workDir: config.workDir }) } : {}) });
+const acabamento = criarAcabamento({ drive, ia, workDir: config.workDir });
+const { processar } = criarEtapas({ db, drive, workDir: config.workDir, acabamento,
+  ...(modulo1Ativo() ? { planejar: criarPlanejadorM1({ acabamento }), lote: criarLote({ db, drive, workDir: config.workDir }) } : {}) });
 const soltos = await db.liberarMeus(config.workerId).catch(() => []);
 if (soltos.length) console.log(`devolvidos para a fila depois do reinício: #${soltos.join(', #')}`);
 let parar = false;
