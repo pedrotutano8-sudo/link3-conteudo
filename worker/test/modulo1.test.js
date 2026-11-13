@@ -188,5 +188,3 @@ test('pausa do áudio sai mesmo quando a transcrição estica a palavra por cima
   assert.ok(mantido(18.6) && mantido(19.6), 'fala fica');
   assert.ok(!mantido(19.0), 'a pausa sai');
 });
-  assert.ok(c2.trechos.some(([a, b]) => 2.1 >= a && 2.1 <= b));
-});
