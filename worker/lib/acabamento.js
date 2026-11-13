@@ -15,6 +15,8 @@ const EXT_FOTO = /\.(heic|heif|jpe?g|png|webp)$/i;
 const tipoDe = (f) => (EXT_VIDEO.test(f.name) || /^video\//.test(f.mimeType || '') ? 'video'
   : EXT_FOTO.test(f.name) || /^image\//.test(f.mimeType || '') ? 'foto' : null);
 const LOTE_DESCRICAO = 20;
+// mesma mídia em pastas diferentes tem o mesmo nome de arquivo: o uso é contado pelo nome
+const chave = (c) => String(c.nome || c.id).toLowerCase();
 
 export const pastasBroll = (kit) => {
   const a = kit?.acabamento || {};
@@ -59,7 +61,10 @@ export function criarAcabamento({ drive, ia, workDir, log = console.log }) {
     }
     if (novos.length) log(`B-roll da marca: ${cat.length} itens no catálogo (${novos.length} novos)`);
     const vivos = new Set(arquivos.map((f) => f.id));
-    return { clipes: cat.filter((c) => vivos.has(c.id) && c.descricao), custo };
+    // o mesmo arquivo pode estar em mais de uma pasta (mesmo nome): entra uma vez só
+    const vistos = new Set();
+    const clipes = cat.filter((c) => vivos.has(c.id) && c.descricao).filter((c) => { const k = chave(c); if (vistos.has(k)) return false; vistos.add(k); return true; });
+    return { clipes, custo };
   }
 
   // onde entram os clipes (tempos do vídeo final, já cortado), evitando o que outros reels da marca já usaram
@@ -68,13 +73,13 @@ export function criarAcabamento({ drive, ia, workDir, log = console.log }) {
     if (!pastasBroll(kit).length || !palavras?.length) return { broll: [], custo: zero };
     const { clipes, custo } = await catalogo(kit);
     if (!clipes.length) return { broll: [], custo };
-    const arqUsos = path.join(dirMarca(kit), 'usos.json');
+    const arqUsos = path.join(dirMarca(kit), 'usos-por-nome.json');
     const usos = lerJson(arqUsos, {});
-    for (const id of Object.keys(usos)) usos[id] = (usos[id] || []).filter((j) => j !== job?.id);   // replanejar não conta como uso
-    const usadoPorOutro = (c) => (usos[c.id] || []).length > 0;
+    for (const k of Object.keys(usos)) usos[k] = (usos[k] || []).filter((j) => j !== job?.id);   // replanejar não conta como uso
+    const usadoPorOutro = (c) => (usos[chave(c)] || []).length > 0;
     const livres = clipes.filter((c) => !usadoPorOutro(c));
     // com material livre suficiente, o Claude só vê o que ainda não foi usado; senão vê tudo, menos usados primeiro
-    const oferta = livres.length >= 8 ? livres : [...clipes].sort((a, b) => (usos[a.id]?.length || 0) - (usos[b.id]?.length || 0));
+    const oferta = livres.length >= 8 ? livres : [...clipes].sort((a, b) => (usos[chave(a)]?.length || 0) - (usos[chave(b)]?.length || 0));
     const r = await ia.escolherBroll({ palavras, clipes: oferta.map((c) => ({ ...c, descricao: `${c.tipo === 'foto' ? '[foto] ' : ''}${c.descricao}${usadoPorOutro(c) ? ' (já usado em outro reel)' : ''}` })) });
     const usados = new Set();
     const broll = [];
@@ -91,7 +96,7 @@ export function criarAcabamento({ drive, ia, workDir, log = console.log }) {
       broll.push({ id: c.id, nome: c.nome, tipo: c.tipo, inicio: +inicio.toFixed(2), fim: +fim.toFixed(2), offset: +offset.toFixed(2) });
     }
     broll.sort((x, y) => x.inicio - y.inicio);
-    if (job?.id) { for (const b of broll) usos[b.id] = [...(usos[b.id] || []), job.id]; fs.writeFileSync(arqUsos, JSON.stringify(usos)); }
+    if (job?.id) { for (const b of broll) usos[chave(b)] = [...(usos[chave(b)] || []), job.id]; fs.writeFileSync(arqUsos, JSON.stringify(usos)); }
     return { broll, custo: { usd: custo.usd + r.usd, entrada: custo.entrada + r.tokens.entrada, saida: custo.saida + r.tokens.saida } };
   }
 
