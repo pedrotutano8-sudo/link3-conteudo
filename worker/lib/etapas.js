@@ -109,6 +109,19 @@ export function criarEtapas({ db, drive, workDir, planejar = planejarBase, lote 
     return 'previa_pronta';
   }
 
+  // refaz só a prévia com o roteiro que já existe (sem chamar a IA de novo): para ajuste de áudio, trilha ou visual
+  async function refazerPrevia(job) {
+    if (!job.roteiro) throw new Error('pedido sem roteiro: precisa planejar primeiro');
+    const e = await garantirBruto(job);
+    const kit = await db.kit(job.client_id);
+    const previa = path.join(pasta(job), `previa-${Date.now()}.mp4`);
+    await renderizar(job, e, job.roteiro, kit, previa, { previa: true });
+    const destino = await db.enviarPrevia(`${job.org_id}/${job.id}/${path.basename(previa)}`, previa);
+    fs.rmSync(previa, { force: true });
+    await db.atualizar(job.id, 'previa_pronta', { previa_path: destino });
+    return 'previa_pronta';
+  }
+
   async function entregar(job) {
     const e = await garantirBruto(job);
     await db.atualizar(job.id, 'entregando');
@@ -141,5 +154,5 @@ export function criarEtapas({ db, drive, workDir, planejar = planejarBase, lote 
       default: throw new Error(`status inesperado na fila: ${job.status}`);
     }
   }
-  return { processar };
+  return { processar, refazerPrevia };
 }

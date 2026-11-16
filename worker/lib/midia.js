@@ -67,7 +67,7 @@ export async function montarComLogo(entrada, saida, { logo, previa = false, larg
   return saida;
 }
 
-export const VOZ = 'highpass=f=80,afftdn=nf=-30,equalizer=f=3000:t=q:w=1.2:g=2,acompressor=threshold=-20dB:ratio=2.5:attack=15:release=150:makeup=2,loudnorm=I=-14.5:TP=-1.5:LRA=7,aformat=sample_rates=48000:channel_layouts=stereo';
+export const VOZ = 'highpass=f=80,afftdn=nf=-30,equalizer=f=3000:t=q:w=1.2:g=2,acompressor=threshold=-20dB:ratio=2.5:attack=15:release=150:makeup=2,dynaudnorm=f=250:g=15:m=6:p=0.9,loudnorm=I=-14.5:TP=-1.5:LRA=7,aformat=sample_rates=48000:channel_layouts=stereo';
 
 // volume do arquivo final (EBU R128): loudness integrado (LUFS) e pico verdadeiro (dBTP)
 export async function medirVolume(arquivo) {
@@ -157,7 +157,7 @@ export async function montarEdicao(entrada, saida, { trechos, ass, fontsDir, log
 
 // trilha de fundo: entra baixa (cerca de 9 dB abaixo da voz), abaixa mais quando a pessoa fala (ducking),
 // entra com fade de 0,6 s e sai com fade de 1,5 s no fim do vídeo
-export async function misturarTrilha(arquivo, trilha, { nivel = Number(process.env.TRILHA_NIVEL || -23) } = {}) {
+export async function misturarTrilha(arquivo, trilha, { nivel = Number(process.env.TRILHA_NIVEL || -24) } = {}) {
   const info = await medir(arquivo);
   const dur = info.duracao;
   const m = await medirVolume(trilha);
@@ -167,7 +167,7 @@ export async function misturarTrilha(arquivo, trilha, { nivel = Number(process.e
   const filtro = [
     `[1:a]${fmt},volume=${ganho.toFixed(2)}dB,afade=t=in:d=0.6,afade=t=out:st=${Math.max(0, dur - 1.5).toFixed(2)}:d=1.5[m]`,
     `[0:a]${fmt},asplit=2[voz][sc]`,
-    `[m][sc]sidechaincompress=threshold=0.03:ratio=4:attack=20:release=400:makeup=1[md]`,
+    `[m][sc]sidechaincompress=threshold=0.025:ratio=6:attack=15:release=450:makeup=1[md]`,
     `[voz][md]amix=inputs=2:duration=first:dropout_transition=0:normalize=0,${fmt}[a]`,
   ].join(';');
   await rodar(config.ffmpeg, ['-y', '-i', arquivo, '-stream_loop', '-1', '-i', trilha, '-filter_complex', filtro,
