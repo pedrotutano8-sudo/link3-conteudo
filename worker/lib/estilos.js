@@ -9,6 +9,7 @@ export const ELEMENTOS = {
   capitulos: 'Cartão de capítulo',
   impactos: 'Palavra de impacto',
   lista: 'Lista animada',
+  citacao: 'Citação em destaque',
   tarja: 'Tarja de nome e cargo',
   encerramento: 'Encerramento com logo e chamada',
   trilha: 'Trilha de fundo',
@@ -28,13 +29,13 @@ export const ESTILOS = {
     nome: 'Criador / opinião',
     descricao: 'Pessoa falando de um assunto (notícia, opinião, dica). Corte seco, legenda grande com destaque, palavra de impacto e lista; B-roll em tela cheia. Sem P&B, capítulo, tarja ou encerramento com logo.',
     design: true,
-    elementos: { ...tudo(false), gancho: true, impactos: true, lista: true, trilha: true },
+    elementos: { ...tudo(false), gancho: true, impactos: true, lista: true, citacao: true, trilha: true },
   },
   promocional: {
     nome: 'Promocional / varejo',
     descricao: 'Oferta, produto, evento. Gancho forte, palavra de impacto e lista de benefícios, B-roll em cartão e encerramento com chamada. Sem P&B e sem capítulo.',
     design: true,
-    elementos: { ...tudo(true), pb: false, capitulos: false, tarja: false },
+    elementos: { ...tudo(true), pb: false, capitulos: false, tarja: false, citacao: false },
   },
   simples: {
     nome: 'Simples (só legenda)',

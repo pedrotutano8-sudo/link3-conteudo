@@ -34,9 +34,10 @@ Elementos:
 - impactos: 0 a 2 palavras isoladas muito fortes (número, resultado, adjetivo central) mostradas grandes; "palavra" é o índice, "texto" a palavra (pode ser o número escrito com algarismos).
 - lista: só se a pessoa enumerar 3 ou 4 itens (serviços, etapas, benefícios); cada item com "palavra" (índice em que o item é dito) e "texto" (até 4 palavras). Senão, lista vazia.
 - apresentacao: se a pessoa disser o próprio nome e/ou cargo, uma tarja com "nome" (como ela se apresenta) e "cargo" (curto, até 4 palavras; se não disser o cargo, deixe vazio), e "palavra" = índice em que ela diz o nome. Senão, null.
+- citacao: 0 ou 1 frase marcante dita pela pessoa (de 5 a 14 palavras seguidas: opinião forte, resultado, depoimento), que merece ficar em destaque na tela enquanto é dita. "de" e "ate" são os índices da primeira e da última palavra. Se não houver frase assim, null.
 - encerramento: "frase" de até 7 palavras para o cartão final (pode ser a ideia central do vídeo ou um convite).
 - rosto: nas imagens (quadros do vídeo), onde fica a cabeça da pessoa, em porcentagem da altura do quadro: "topo" (topo do cabelo) e "base" (queixo). Se houver mais de um quadro, use a faixa que cobre todos.
-Responda só com JSON: {"gancho": {"linha1": "", "linha2": "", "destaque": ""}, "destaques": [], "capitulos": [{"palavra": 0, "rotulo": "", "titulo": ""}], "impactos": [{"palavra": 0, "texto": ""}], "lista": [{"palavra": 0, "texto": ""}], "apresentacao": {"palavra": 0, "nome": "", "cargo": ""}, "encerramento": {"frase": ""}, "rosto": {"topo": 0, "base": 0}}`;
+Responda só com JSON: {"gancho": {"linha1": "", "linha2": "", "destaque": ""}, "destaques": [], "capitulos": [{"palavra": 0, "rotulo": "", "titulo": ""}], "impactos": [{"palavra": 0, "texto": ""}], "lista": [{"palavra": 0, "texto": ""}], "apresentacao": {"palavra": 0, "nome": "", "cargo": ""}, "citacao": {"de": 0, "ate": 0}, "encerramento": {"frase": ""}, "rosto": {"topo": 0, "base": 0}}`;
 
 // tempos que dependem do estilo: abertura em P&B e cauda de encerramento
 export function temposDesign(cfg) {
@@ -46,7 +47,7 @@ export function temposDesign(cfg) {
 
 export async function planejarDesign({ palavras, duracao, titulo = '', broll = [], marca = '', quadros = [], ficha = null }, { claudeJson }) {
   const desligados = ficha ? Object.entries(ficha.elementos).filter(([, v]) => !v).map(([k]) => k) : [];
-  const avisoDesl = desligados.length ? `\nELEMENTOS DESLIGADOS PARA ESTA MARCA (devolva vazio/null para eles): ${desligados.map((k) => ({ gancho: 'gancho', capitulos: 'capitulos', impactos: 'impactos', lista: 'lista', tarja: 'apresentacao', encerramento: 'encerramento' })[k]).filter(Boolean).join(', ') || 'nenhum'}` : '';
+  const avisoDesl = desligados.length ? `\nELEMENTOS DESLIGADOS PARA ESTA MARCA (devolva vazio/null para eles): ${desligados.map((k) => ({ gancho: 'gancho', capitulos: 'capitulos', impactos: 'impactos', lista: 'lista', tarja: 'apresentacao', citacao: 'citacao', encerramento: 'encerramento' })[k]).filter(Boolean).join(', ') || 'nenhum'}` : '';
   const texto = `${ficha ? contextoFicha(ficha) + '\n' : ''}${avisoDesl}\nMARCA: ${marca}\nTÍTULO SUGERIDO: ${titulo}\nDURAÇÃO: ${duracao.toFixed(1)} s\nB-ROLL JÁ PLANEJADO (não ponha capítulo nem impacto nesses intervalos): ${broll.map((b) => `${b.inicio.toFixed(1)}-${b.fim.toFixed(1)} s`).join(', ') || 'nenhum'}\n\nFALA (índice:palavra@segundo):\n${palavras.map((w, k) => `${k}:${w.p}@${w.i.toFixed(1)}`).join(' ')}`;
   const r = await claudeJson({ system: PROMPT, texto, imagens: quadros, max: 4000 });
   return { plano: limparPlano(r.saida || {}, { palavras, duracao, broll, el: ficha?.elementos }), usd: r.usd || 0, tokens: r.tokens || { entrada: 0, saida: 0 } };
@@ -89,6 +90,15 @@ export function limparPlano(p, { palavras, duracao, broll = [], el = {} }) {
   if (lista.length >= 3) {
     const a = palavras[lista[0].palavra].i - 0.1, b = Math.min(duracao - 2.5, palavras[lista[lista.length - 1].palavra].f + 1.6);
     if (a > 3 && b > a && livre(a, b)) { plano.lista = lista.map((x) => ({ t: +(palavras[x.palavra].i - 0.1).toFixed(2), texto: corta(x.texto, 5) })); plano.listaFim = +b.toFixed(2); reservar(a, b); }
+  }
+  // citação: a fala literal fica em destaque enquanto é dita (cada palavra acende no seu tempo)
+  const ci = p.citacao;
+  if (liga('citacao') && ci && ok(ci.de) && ok(ci.ate) && ci.ate >= ci.de && ci.ate - ci.de <= 15 && ci.ate - ci.de >= 3) {
+    const t = palavras[ci.de].i - 0.15, fim = palavras[ci.ate].f + 1.2;
+    if (t > 3.5 && fim < duracao - 1.5 && livre(t, fim)) {
+      plano.citacao = { t: +t.toFixed(2), fim: +fim.toFixed(2), palavras: palavras.slice(ci.de, ci.ate + 1).map((w) => [w.p.replace(/[.,;:!?…]+$/, ''), +w.i.toFixed(2)]) };
+      reservar(t, fim);
+    }
   }
   for (const m of (liga('impactos') ? p.impactos || [] : []).filter((x) => ok(x.palavra)).slice(0, 2)) {
     const t = palavras[m.palavra].i - 0.05;
@@ -135,7 +145,7 @@ export function montarHtml({ plano, palavras, duracao, cfg, logo = null, broll =
   const { pb, cauda } = temposDesign(cfg);
   const total = duracao + cauda;
   // plano feito antes de um elemento ser desligado na ficha: o que está desligado não aparece
-  plano = { ...plano, capitulos: liga('capitulos') ? plano.capitulos : [], impactos: liga('impactos') ? plano.impactos : [], lista: liga('lista') ? plano.lista : [], apresentacao: liga('tarja') ? plano.apresentacao : null,
+  plano = { ...plano, capitulos: liga('capitulos') ? plano.capitulos : [], impactos: liga('impactos') ? plano.impactos : [], lista: liga('lista') ? plano.lista : [], apresentacao: liga('tarja') ? plano.apresentacao : null, citacao: liga('citacao') ? plano.citacao : null,
     gancho: liga('gancho') ? plano.gancho : { linha1: '', linha2: '', destaque: '' } };
   const temGancho = Boolean(plano.gancho?.linha1 || plano.gancho?.linha2);
   const cartoes = liga('cartoes') ? broll : [];
@@ -144,7 +154,7 @@ export function montarHtml({ plano, palavras, duracao, cfg, logo = null, broll =
   const destaques = new Set(plano.destaques || []);
   const grupos = gruposLegenda(palavras);
   // janelas sem legenda: capítulos, lista (a lista ocupa o lugar dela) e encerramento
-  const semLegenda = [...(plano.capitulos || []).map((x) => [x.t, x.t + 1.4]), ...(plano.lista?.length ? [[plano.lista[0].t, plano.listaFim]] : []), ...(cauda > 0 ? [[duracao, total]] : [])];
+  const semLegenda = [...(plano.capitulos || []).map((x) => [x.t, x.t + 1.4]), ...(plano.lista?.length ? [[plano.lista[0].t, plano.listaFim]] : []), ...(plano.citacao ? [[plano.citacao.t, plano.citacao.fim]] : []), ...(cauda > 0 ? [[duracao, total]] : [])];
   const fonte = (peso, estilo = 'normal') => `@font-face{font-family:'M';font-weight:${peso};font-style:${estilo};src:url('file://${FONTES}montserrat-latin-${peso}-${estilo}.woff2') format('woff2')}`;
   const g = plano.gancho || {};
   const b0 = broll.length ? Math.min(...broll.map((b) => b.inicio)) : Infinity;
@@ -195,6 +205,11 @@ html,body{margin:0;padding:0;background:transparent;width:1080px;height:1920px;o
 #tarja .txt{padding:20px 34px 22px 26px;background:${c.escuro}e6}
 #tarja b{display:block;font-weight:900;font-size:52px;line-height:1.05;letter-spacing:-.02em}
 #tarja span{display:block;margin-top:6px;font-weight:500;font-size:32px;color:rgba(255,255,255,.88)}
+/* citação */
+#cit{left:70px;width:940px;top:1030px;padding:58px 52px 44px;border-radius:32px;background:${c.escuro}e6;border:2px solid rgba(255,255,255,.14);box-shadow:0 24px 60px rgba(0,0,0,.5)}
+#cit .aspas{position:absolute;left:34px;top:-70px;font-weight:900;font-size:190px;line-height:1;color:${c.destaque};text-shadow:0 10px 30px rgba(0,0,0,.4)}
+#cit .txt{font-weight:800;font-size:56px;line-height:1.12;letter-spacing:-.015em}
+#cit .txt span{opacity:.32}
 /* impacto */
 .imp{left:50px;width:980px;top:200px;text-align:center;font-weight:900;font-style:italic;font-size:170px;line-height:1;letter-spacing:-.03em;color:${c.destaque};text-shadow:0 12px 50px rgba(0,0,0,.55)}
 /* lista */
@@ -219,7 +234,8 @@ html,body{margin:0;padding:0;background:transparent;width:1080px;height:1920px;o
 ${cartoes.map((b, k) => `<div class="x moldura" id="m${k}"></div>`).join('\n')}
 ${grupos.map((gr, k) => `<div class="x leg" id="l${k}">${gr.map((w) => `<span id="w${w.k}"${destaques.has(w.k) ? ' class="d"' : ''}>${esc(w.p.replace(/[.,;:!?…]+$/, ''))}</span>`).join('')}</div>`).join('\n')}
 ${plano.apresentacao ? `<div class="x" id="tarja"><div class="barra"></div><div class="txt"><b>${esc(plano.apresentacao.nome)}</b>${plano.apresentacao.cargo ? `<span>${esc(plano.apresentacao.cargo)}</span>` : ''}</div></div>` : ''}
-${(plano.impactos || []).map((m, k) => `<div class="x imp fit" id="i${k}">${esc(m.texto)}</div>`).join('\n')}
+${(plano.impactos || []).map((m, k) => { const n = String(m.texto).match(/^(\D*?)(\d[\d.]*)(.*)$/); return `<div class="x imp fit" id="i${k}"${n ? ` data-pre="${esc(n[1])}" data-num="${n[2].replace(/\./g, '')}" data-pos="${esc(n[3])}"` : ''}>${esc(m.texto)}</div>`; }).join('\n')}
+${plano.citacao ? `<div class="x" id="cit"><div class="aspas">“</div><div class="txt">${plano.citacao.palavras.map(([w], k) => `<span id="cw${k}">${esc(w)}</span>`).join(' ')}</div></div>` : ''}
 ${plano.lista?.length ? `<div class="x lista" id="lista" style="opacity:1">${plano.lista.map((it, k) => `<div class="item" id="it${k}" style="top:${k * 122}px"><em>${k + 1}</em>${esc(it.texto)}</div>`).join('')}</div>` : ''}
 ${(plano.capitulos || []).map((x, k) => `<div class="x cap" id="c${k}"><div class="tela"><div class="grao"></div><div class="elem"></div><div class="rot"><i></i>${esc(x.rotulo)}</div><div class="tit fit">${esc(x.titulo)}</div><div class="marca"></div></div></div>`).join('\n')}
 ${cauda > 0 ? '' : '<!-- sem encerramento -->'}<div class="x" id="fim" style="${cauda > 0 ? '' : 'display:none;'}"left:0;top:0;width:1080px;height:1920px"><div class="tela"><div class="grao"></div><div class="elem"></div><div class="col"><div class="logo"></div><div class="frase fit" style="width:900px">${esc(plano.encerramento?.frase || '')}</div>${cfg.assinatura ? `<div class="sub">${esc(cfg.assinatura)}</div>` : ''}<div class="cta">${esc(cfg.cta)} <span>→</span></div>${cfg.arroba ? `<div class="arroba">${esc(cfg.arroba)}</div>` : ''}</div></div></div>
@@ -233,7 +249,7 @@ ${cauda > 0 ? '' : '<!-- sem encerramento -->'}<div class="x" id="fim" style="${
   for(let i=0;i<im.data.length;i+=4){const v=(r()*255)|0;im.data[i]=im.data[i+1]=im.data[i+2]=v;im.data[i+3]=255}
   cx.putImageData(im,0,0);document.documentElement.style.setProperty('--grao','url('+cv.toDataURL()+')');
 
-  const D=${JSON.stringify({ duracao, total, pb, cartao: CARTAO, broll: cartoes.map((b) => [b.inicio, b.fim]), grupos: grupos.map((gr) => gr.map((w) => [w.k, +w.i.toFixed(3), +w.f.toFixed(3)])), sem: semLegenda, caps: (plano.capitulos || []).map((x) => x.t), imps: (plano.impactos || []).map((x) => x.t), lista: (plano.lista || []).map((x) => x.t), listaFim: plano.listaFim || 0, ganchoFim, tarja: plano.apresentacao ? plano.apresentacao.t : -1 })};
+  const D=${JSON.stringify({ duracao, total, pb, cartao: CARTAO, broll: cartoes.map((b) => [b.inicio, b.fim]), grupos: grupos.map((gr) => gr.map((w) => [w.k, +w.i.toFixed(3), +w.f.toFixed(3)])), sem: semLegenda, caps: (plano.capitulos || []).map((x) => x.t), imps: (plano.impactos || []).map((x) => x.t), lista: (plano.lista || []).map((x) => x.t), listaFim: plano.listaFim || 0, ganchoFim, tarja: plano.apresentacao ? plano.apresentacao.t : -1, cit: plano.citacao ? { t: plano.citacao.t, fim: plano.citacao.fim, w: plano.citacao.palavras.map((x) => x[1]) } : null })};
   const cl=(x)=>Math.max(0,Math.min(1,x)), eo=(p)=>1-Math.pow(1-p,3), eio=(p)=>p<.5?4*p*p*p:1-Math.pow(-2*p+2,3)/2;
   const back=(p)=>{const c1=1.70158,c3=c1+1;return 1+c3*Math.pow(p-1,3)+c1*Math.pow(p-1,2)};
   const $=(id)=>document.getElementById(id);
@@ -278,7 +294,14 @@ ${cauda > 0 ? '' : '<!-- sem encerramento -->'}<div class="x" id="fim" style="${
       set(el,Math.min(cl(p*1.4),s),'translateX('+(-120*(1-p)-40*(1-s)).toFixed(1)+'px)','clip-path:inset(0 '+(100*(1-p)).toFixed(1)+'% 0 0 round 22px)')}}
     // impacto
     D.imps.forEach((a,k)=>{const el=$('i'+k); if(t<a||t>=a+1.1){set(el,0);return}
-      const p=cl((t-a)/0.28), s=cl((a+1.1-t)/0.22); set(el,Math.min(cl(p*1.5),s),'scale('+(1.35-0.35*back(p)).toFixed(3)+') translateY('+(-30*(1-s)).toFixed(1)+'px)','filter:blur('+(10*(1-eo(p))+6*(1-s)).toFixed(1)+'px)')});
+      const p=cl((t-a)/0.28), s=cl((a+1.1-t)/0.22); set(el,Math.min(cl(p*1.5),s),'scale('+(1.35-0.35*back(p)).toFixed(3)+') translateY('+(-30*(1-s)).toFixed(1)+'px)','filter:blur('+(10*(1-eo(p))+6*(1-s)).toFixed(1)+'px)');
+      // número conta até o valor nos primeiros 0,6 s
+      if(el.dataset.num){ const alvo=Number(el.dataset.num), v=Math.round(alvo*eo(cl((t-a)/0.6))); const txt=el.dataset.pre+v.toLocaleString('pt-BR')+el.dataset.pos; if(el.textContent!==txt) el.textContent=txt; sig.push(txt); }});
+    // citação: cartão sobe, cada palavra acende quando é dita
+    if(D.cit){ const el=$('cit'), a=D.cit.t, b=D.cit.fim; if(t<a||t>=b){set(el,0)} else {
+      const p=eo(cl((t-a)/0.35)), s=cl((b-t)/0.3); set(el,Math.min(p,s),'translateY('+(50*(1-p)+30*(1-s)).toFixed(1)+'px)');
+      set(el.querySelector('.aspas'),1,'scale('+(0.6+0.4*back(cl((t-a-0.05)/0.4))).toFixed(3)+')','transform-origin:30% 70%');
+      D.cit.w.forEach((wi,k)=>{ const q=cl((t-wi+0.05)/0.15); set($('cw'+k),0.32+0.68*q,'',q>=1?'color:#fff':''); }); } }
     // lista
     D.lista.forEach((a,k)=>{const el=$('it'+k); const fim=D.listaFim; if(t<a||t>=fim){set(el,0);return}
       const p=eo(cl((t-a)/0.35)), s=cl((fim-t)/0.25), apaga=k<D.lista.length-1&&t>D.lista[k+1]?0.45:1;
