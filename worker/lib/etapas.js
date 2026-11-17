@@ -113,7 +113,9 @@ export function criarEtapas({ db, drive, workDir, planejar = planejarBase, lote 
       roteiro.design = d.plano;
       log(`job ${job.id}: design planejado (US$ ${d.usd.toFixed(4)})`);
     }
-    const broll = acabamento ? await acabamento.arquivosBroll(kit, roteiro.broll, { previa: false }).catch((err) => { log(`job ${job.id}: B-roll não carregou (${err.message})`); return []; }) : [];
+    // cartão de B-roll nunca nos 3 primeiros segundos (é do gancho): empurra o início ou descarta se ficar curto
+    const brollPlano = (roteiro.broll || []).map((b) => (b.inicio < 3 ? { ...b, inicio: 3 } : b)).filter((b) => b.fim - b.inicio >= 1.2);
+    const broll = acabamento ? await acabamento.arquivosBroll(kit, brollPlano, { previa: false }).catch((err) => { log(`job ${job.id}: B-roll não carregou (${err.message})`); return []; }) : [];
     const logoMarca = cfg.logo && fs.existsSync(path.join(MARCAS_DIR, cfg.logo)) ? path.join(MARCAS_DIR, cfg.logo) : logo;
     const { html, total } = montarHtml({ plano: roteiro.design, palavras: roteiro.palavras, duracao: roteiro.duracao_final, cfg, logo: logoMarca, broll });
     const camada = path.join(pasta(job), 'camada.mov');

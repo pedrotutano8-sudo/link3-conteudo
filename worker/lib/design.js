@@ -127,7 +127,8 @@ export function montarHtml({ plano, palavras, duracao, cfg, logo = null, broll =
   const semLegenda = [...(plano.capitulos || []).map((x) => [x.t, x.t + 1.4]), ...(plano.lista?.length ? [[plano.lista[0].t, plano.listaFim]] : []), [duracao, total]];
   const fonte = (peso, estilo = 'normal') => `@font-face{font-family:'M';font-weight:${peso};font-style:${estilo};src:url('file://${FONTES}montserrat-latin-${peso}-${estilo}.woff2') format('woff2')}`;
   const g = plano.gancho || {};
-  const ganchoFim = plano.ganchoFim ?? Math.min(3.2, duracao - 1);
+  const b0 = broll.length ? Math.min(...broll.map((b) => b.inicio)) : Infinity;
+  const ganchoFim = Math.max(1.6, Math.min(3.2, b0 - 0.15, duracao - 1));
   // gancho no alto quando a cabeça começa abaixo de 28% da altura; senão vai para baixo do queixo e a legenda espera ele sair
   const rosto = plano.rosto;
   const ganchoEmBaixo = Boolean(rosto && rosto.topo < 28);
