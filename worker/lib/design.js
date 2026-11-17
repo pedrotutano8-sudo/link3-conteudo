@@ -176,7 +176,7 @@ html,body{margin:0;padding:0;background:transparent;width:1080px;height:1920px;o
 #tarja b{display:block;font-weight:900;font-size:52px;line-height:1.05;letter-spacing:-.02em}
 #tarja span{display:block;margin-top:6px;font-weight:500;font-size:32px;color:rgba(255,255,255,.88)}
 /* impacto */
-.imp{left:0;width:1080px;top:200px;text-align:center;font-weight:900;font-style:italic;font-size:170px;line-height:1;letter-spacing:-.03em;color:${c.destaque};text-shadow:0 12px 50px rgba(0,0,0,.55)}
+.imp{left:50px;width:980px;top:200px;text-align:center;font-weight:900;font-style:italic;font-size:170px;line-height:1;letter-spacing:-.03em;color:${c.destaque};text-shadow:0 12px 50px rgba(0,0,0,.55)}
 /* lista */
 .lista{left:70px;width:940px;top:1110px}
 .item{position:absolute;left:0;width:940px;height:104px;display:flex;align-items:center;gap:24px;padding:0 30px;border-radius:26px;background:${c.escuro}e0;border:2px solid rgba(255,255,255,.16);box-shadow:0 18px 44px rgba(0,0,0,.45);font-weight:800;font-size:46px;opacity:0}
@@ -195,14 +195,14 @@ html,body{margin:0;padding:0;background:transparent;width:1080px;height:1920px;o
 <div class="x" id="gsombra"></div>
 <div class="x" id="gbarra"></div>
 <div class="x" id="g1">${esc(g.linha1)}</div>
-<div class="x" id="g2">${linha2}</div>
+<div class="x fit" id="g2">${linha2}</div>
 ${broll.map((b, k) => `<div class="x moldura" id="m${k}"></div>`).join('\n')}
 ${grupos.map((gr, k) => `<div class="x leg" id="l${k}">${gr.map((w) => `<span id="w${w.k}"${destaques.has(w.k) ? ' class="d"' : ''}>${esc(w.p.replace(/[.,;:!?…]+$/, ''))}</span>`).join('')}</div>`).join('\n')}
 ${plano.apresentacao ? `<div class="x" id="tarja"><div class="barra"></div><div class="txt"><b>${esc(plano.apresentacao.nome)}</b>${plano.apresentacao.cargo ? `<span>${esc(plano.apresentacao.cargo)}</span>` : ''}</div></div>` : ''}
-${(plano.impactos || []).map((m, k) => `<div class="x imp" id="i${k}">${esc(m.texto)}</div>`).join('\n')}
+${(plano.impactos || []).map((m, k) => `<div class="x imp fit" id="i${k}">${esc(m.texto)}</div>`).join('\n')}
 ${plano.lista?.length ? `<div class="x lista" id="lista" style="opacity:1">${plano.lista.map((it, k) => `<div class="item" id="it${k}" style="top:${k * 122}px"><em>${k + 1}</em>${esc(it.texto)}</div>`).join('')}</div>` : ''}
-${(plano.capitulos || []).map((x, k) => `<div class="x cap" id="c${k}"><div class="tela"><div class="grao"></div><div class="elem"></div><div class="rot"><i></i>${esc(x.rotulo)}</div><div class="tit">${esc(x.titulo)}</div><div class="marca"></div></div></div>`).join('\n')}
-<div class="x" id="fim" style="left:0;top:0;width:1080px;height:1920px"><div class="tela"><div class="grao"></div><div class="elem"></div><div class="col"><div class="logo"></div><div class="frase">${esc(plano.encerramento?.frase || '')}</div>${cfg.assinatura ? `<div class="sub">${esc(cfg.assinatura)}</div>` : ''}<div class="cta">${esc(cfg.cta)} <span>→</span></div>${cfg.arroba ? `<div class="arroba">${esc(cfg.arroba)}</div>` : ''}</div></div></div>
+${(plano.capitulos || []).map((x, k) => `<div class="x cap" id="c${k}"><div class="tela"><div class="grao"></div><div class="elem"></div><div class="rot"><i></i>${esc(x.rotulo)}</div><div class="tit fit">${esc(x.titulo)}</div><div class="marca"></div></div></div>`).join('\n')}
+<div class="x" id="fim" style="left:0;top:0;width:1080px;height:1920px"><div class="tela"><div class="grao"></div><div class="elem"></div><div class="col"><div class="logo"></div><div class="frase fit" style="width:900px">${esc(plano.encerramento?.frase || '')}</div>${cfg.assinatura ? `<div class="sub">${esc(cfg.assinatura)}</div>` : ''}<div class="cta">${esc(cfg.cta)} <span>→</span></div>${cfg.arroba ? `<div class="arroba">${esc(cfg.arroba)}</div>` : ''}</div></div></div>
 <div class="x" id="flash"></div>
 </div>
 <script>
@@ -286,7 +286,15 @@ ${(plano.capitulos || []).map((x, k) => `<div class="x cap" id="c${k}"><div clas
     }
     return sig.join('|');
   };
-  window.__pronto=true;
+  // texto que não cabe na largura (palavra longa) diminui até caber
+  // (só depois das fontes carregadas: medir com a fonte reserva dá largura errada)
+  const fontes=['500 50px M','800 50px M','900 50px M','italic 800 50px M','italic 900 50px M'].map((f)=>document.fonts.load(f));
+  Promise.all(fontes).then(()=>document.fonts.ready).then(()=>{
+    document.querySelectorAll('.fit').forEach((el)=>{ let fs=parseFloat(getComputedStyle(el).fontSize); let n=0;
+      const ws=el.querySelectorAll('.gw'); const largo=()=>Math.max(el.scrollWidth, ...[...ws].map((w)=>w.offsetLeft+w.offsetWidth));
+      while(largo()>el.clientWidth+2 && fs>36 && n++<40){ fs-=3; el.style.fontSize=fs+'px'; } });
+    window.__pronto=true;
+  });
 })();
 </script></body></html>`;
   return { html, total };
@@ -356,6 +364,7 @@ export async function fotografar(html, tempos, dir) {
     await page.setViewport({ width: 1080, height: 1920 });
     await page.goto('file://' + pagina, { waitUntil: 'load' });
     await page.evaluate(() => document.fonts.ready);
+    await page.waitForFunction(() => window.__pronto === true);
     const cdp = await page.createCDPSession();
     await cdp.send('Emulation.setDefaultBackgroundColorOverride', { color: { r: 0, g: 0, b: 0, a: 0 } });
     for (const t of tempos) {
