@@ -6,6 +6,8 @@ import path from 'node:path';
 import { medir, montarComLogo, montarEdicao, rodar, juntarBrutos, acertarVolume, misturarTrilha } from './midia.js';
 import { escolherTrilha } from './acabamento.js';
 import { gerarAss } from './legenda.js';
+import { designDoKit, planejarDesign, montarHtml, renderizarCamada, mascaraCartao, CARTAO, CAUDA, PB, MARCAS_DIR } from './design.js';
+import { claudeJson } from './ia.js';
 
 const extensao = (nome, mime) => path.extname(nome || '') || ({ 'video/quicktime': '.mov', 'video/mp4': '.mp4' }[mime] || '.mp4');
 const limpo = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\w.-]+/g, ' ').trim();
@@ -82,11 +84,35 @@ export function criarEtapas({ db, drive, workDir, planejar = planejarBase, lote 
   async function renderizar(job, e, roteiro, kit, saida, { previa = false } = {}) {
     const logo = await logoLocal(job, kit);
     if (roteiro?.versao !== 'm1') return montarComLogo(e.bruto, saida, { logo, previa });
+    const cfg = designDoKit(kit);
+    if (cfg) return renderizarComDesign(job, e, roteiro, kit, cfg, saida, { previa, logo });
     const f = await fonteLocal(job, kit);
     const ass = path.join(pasta(job), 'legenda.ass');
     fs.writeFileSync(ass, gerarAss({ palavras: roteiro.palavras, duracao: roteiro.duracao_final, kit: kit || {}, titulo: roteiro.titulo, ...(f.familia ? { fonte: f.familia } : {}) }));
     const broll = acabamento ? await acabamento.arquivosBroll(kit, roteiro.broll, { previa }).catch((err) => { log(`job ${job.id}: B-roll não carregou (${err.message})`); return []; }) : [];
     await montarEdicao(e.bruto, saida, { trechos: roteiro.trechos, ass, fontsDir: f.fontsDir, logo, previa, temAudio: e.info.temAudio, broll });
+    const trilha = e.info.temAudio ? escolherTrilha(kit) : null;
+    if (trilha) await misturarTrilha(saida, trilha).catch((err) => log(`job ${job.id}: trilha não entrou (${err.message})`));
+    if (e.info.temAudio) await acertarVolume(saida).catch(() => null);
+    return saida;
+  }
+
+  // camada de design da marca (legenda, gancho, capítulos, cartões de B-roll, encerramento) feita no Chromium
+  async function renderizarComDesign(job, e, roteiro, kit, cfg, saida, { previa, logo }) {
+    if (!roteiro.design) {
+      const d = await planejarDesign({ palavras: roteiro.palavras, duracao: roteiro.duracao_final, titulo: roteiro.titulo, broll: roteiro.broll || [], marca: cfg.marca || '' }, { claudeJson });
+      roteiro.design = d.plano;
+      log(`job ${job.id}: design planejado (US$ ${d.usd.toFixed(4)})`);
+    }
+    const broll = acabamento ? await acabamento.arquivosBroll(kit, roteiro.broll, { previa: false }).catch((err) => { log(`job ${job.id}: B-roll não carregou (${err.message})`); return []; }) : [];
+    const logoMarca = cfg.logo && fs.existsSync(path.join(MARCAS_DIR, cfg.logo)) ? path.join(MARCAS_DIR, cfg.logo) : logo;
+    const { html, total } = montarHtml({ plano: roteiro.design, palavras: roteiro.palavras, duracao: roteiro.duracao_final, cfg, logo: logoMarca, broll });
+    const camada = path.join(pasta(job), 'camada.mov');
+    await renderizarCamada(html, { total, saida: camada, log: (m) => log(`job ${job.id}: ${m}`) });
+    const mascara = mascaraCartao(path.join(pasta(job), 'cartao.pgm'));
+    try {
+      await montarEdicao(e.bruto, saida, { trechos: roteiro.trechos, logo, previa, temAudio: e.info.temAudio, broll, design: { camada, cauda: CAUDA, pb: PB, cartao: { ...CARTAO, mascara } } });
+    } finally { fs.rmSync(camada, { force: true }); }
     const trilha = e.info.temAudio ? escolherTrilha(kit) : null;
     if (trilha) await misturarTrilha(saida, trilha).catch((err) => log(`job ${job.id}: trilha não entrou (${err.message})`));
     if (e.info.temAudio) await acertarVolume(saida).catch(() => null);
@@ -105,7 +131,7 @@ export function criarEtapas({ db, drive, workDir, planejar = planejarBase, lote 
     await renderizar(job, e, r.roteiro, kit, previa, { previa: true });
     const destino = await db.enviarPrevia(`${job.org_id}/${job.id}/${path.basename(previa)}`, previa);
     fs.rmSync(previa, { force: true });
-    await db.atualizar(job.id, 'previa_pronta', { previa_path: destino });
+    await db.atualizar(job.id, 'previa_pronta', { previa_path: destino, roteiro: r.roteiro });
     return 'previa_pronta';
   }
 
@@ -118,7 +144,7 @@ export function criarEtapas({ db, drive, workDir, planejar = planejarBase, lote 
     await renderizar(job, e, job.roteiro, kit, previa, { previa: true });
     const destino = await db.enviarPrevia(`${job.org_id}/${job.id}/${path.basename(previa)}`, previa);
     fs.rmSync(previa, { force: true });
-    await db.atualizar(job.id, 'previa_pronta', { previa_path: destino });
+    await db.atualizar(job.id, 'previa_pronta', { previa_path: destino, roteiro: job.roteiro });
     return 'previa_pronta';
   }
 

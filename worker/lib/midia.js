@@ -94,8 +94,9 @@ export async function acertarVolume(arquivo, { meta = -14, tolerancia = 0.5 } = 
 
 // Módulo 1: corta as pausas (trechos), monta 9:16, aplica logo e queima a legenda (.ass) num passo só.
 // Acabamento de cada corte: microtransição no áudio (sem estalo) e zoom alternado na imagem (o corte vira "punch-in").
-export async function montarEdicao(entrada, saida, { trechos, ass, fontsDir, logo, previa = false, larguraLogo = 160, margem = 48, temAudio = true, zoom = 1.1, tratarVoz = true, broll = [] } = {}) {
-  const [w, h] = previa ? [540, 960] : [1080, 1920];
+export async function montarEdicao(entrada, saida, { trechos, ass, fontsDir, logo, previa = false, larguraLogo = 160, margem = 48, temAudio = true, zoom = 1.1, tratarVoz = true, broll = [], design = null } = {}) {
+  // com a camada de design a prévia sai em 1080p: o cliente avalia acabamento, não dá para julgar em 540p
+  const [w, h] = previa && !design ? [540, 960] : [1080, 1920];
   const lw = Math.round(larguraLogo * (w / 1080)), m = Math.round(margem * (w / 1080));
   const partes = [], rotulos = [];
   const lista = trechos?.length ? trechos : [[0, null]];
@@ -125,25 +126,50 @@ export async function montarEdicao(entrada, saida, { trechos, ass, fontsDir, log
   const n = rotulos.length;
   partes.push(`${rotulos.join('')}concat=n=${n}:v=1:a=${temAudio ? 1 : 0}[v]${temAudio ? '[ac]' : ''}`);
   const args = ['-y', '-i', entrada];
-  let atual = '[v]', entradas = 1;
+  let atual = '[v]', entradas = 1, audio = '[ac]';
+  if (design) {
+    // cauda para o encerramento, cor levemente quente, abertura em P&B e fundo desfocado/escurecido enquanto o cartão de B-roll está na tela
+    const janelas = (broll || []).map((b) => `between(t,${b.inicio.toFixed(2)},${b.fim.toFixed(2)})`).join('+') || '0';
+    partes.push(`[v]tpad=stop_mode=clone:stop_duration=${design.cauda},eq=contrast=1.05:saturation=1.08:gamma=0.98,colorbalance=rm=0.025:bm=-0.025,hue=s=0:enable='lt(t,${design.pb})',boxblur=22:2:enable='${janelas}',eq=brightness=-0.09:saturation=0.75:enable='${janelas}'[vd]`);
+    atual = '[vd]';
+    if (temAudio) { partes.push(`[ac]apad=pad_dur=${design.cauda}[acd]`); audio = '[acd]'; }
+  }
   // imagens de apoio por cima da fala (o áudio continua o da pessoa); entram antes da logo e da legenda
   for (const [k, b] of (broll || []).entries()) {
     const dur = Math.max(0.5, b.fim - b.inicio);
     args.push('-ss', String(b.offset || 0), '-t', dur.toFixed(2), '-i', b.arquivo);
     const ix = entradas++;
+    if (design?.cartao) {
+      // cartão flutuante: cantos arredondados (máscara), sobe e aparece; a camada desenha borda e sombra no mesmo lugar
+      const c = design.cartao, a = b.inicio.toFixed(2), z = b.fim.toFixed(2);
+      args.push('-loop', '1', '-framerate', '30', '-t', dur.toFixed(2), '-i', c.mascara);
+      const im = entradas++;
+      partes.push(`[${ix}:v]scale=${c.w}:${c.h}:force_original_aspect_ratio=increase,crop=${c.w}:${c.h},setsar=1,fps=30,format=yuva420p,setpts=PTS-STARTPTS+${a}/TB[bb${k}]`);
+      partes.push(`[${im}:v]format=gray,setpts=PTS-STARTPTS+${a}/TB[mk${k}]`);
+      partes.push(`[bb${k}][mk${k}]alphamerge,fade=t=in:st=${a}:d=0.25:alpha=1,fade=t=out:st=${(b.fim - c.sai).toFixed(2)}:d=${c.sai}:alpha=1[bc${k}]`);
+      partes.push(`${atual}[bc${k}]overlay=x=${c.x}:y='${c.y}+${c.sobe}*pow(1-clip((t-${a})/${c.entra},0,1),3)':enable='between(t,${a},${z})':eof_action=pass[vb${k}]`);
+      atual = `[vb${k}]`;
+      continue;
+    }
     partes.push(`[${ix}:v]scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h},setsar=1,fps=30,format=yuv420p,setpts=PTS-STARTPTS+${b.inicio}/TB[b${k}]`);
     partes.push(`${atual}[b${k}]overlay=enable='between(t,${b.inicio},${b.fim})':eof_action=pass[vb${k}]`);
     atual = `[vb${k}]`;
   }
   if (logo) { args.push('-i', logo); const ix = entradas++; partes.push(`[${ix}:v]scale=${lw}:-1[l];${atual}[l]overlay=W-w-${m}:${m}[vl]`); atual = '[vl]'; }
+  if (design?.camada) {
+    args.push('-i', design.camada);
+    const ix = entradas++;
+    partes.push(`${atual}[${ix}:v]overlay=0:0:eof_action=pass:format=auto,format=yuv420p[vz]`);
+    atual = '[vz]';
+  }
   if (ass) {
     const esc = (s) => s.replace(/\\/g, '/').replace(/:/g, '\\:').replace(/'/g, "\\'");
     partes.push(`${atual}ass=filename='${esc(ass)}'${fontsDir ? `:fontsdir='${esc(fontsDir)}'` : ''}[vs]`);
     atual = '[vs]';
   }
   args.push('-filter_complex', partes.join(';'), '-map', atual);
-  if (temAudio) args.push('-map', '[ac]', '-c:a', 'aac', '-b:a', '192k', '-ar', '48000');
-  args.push('-c:v', 'libx264', '-preset', previa ? 'veryfast' : 'medium', '-crf', previa ? '28' : '20', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', saida);
+  if (temAudio) args.push('-map', audio, '-c:a', 'aac', '-b:a', '192k', '-ar', '48000');
+  args.push('-c:v', 'libx264', '-preset', previa ? 'veryfast' : 'medium', '-crf', previa ? (design ? '22' : '28') : '19', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', saida);
   await rodar(config.ffmpeg, args);
   // voz tratada, igual ao kit Edição Sem Editor: corta grave, reduz ruído, dá presença, comprime leve e normaliza.
   // Passo separado só no áudio (o ffmpeg 5.1 do servidor recusa esse filtro dentro do filter_complex com a logo).

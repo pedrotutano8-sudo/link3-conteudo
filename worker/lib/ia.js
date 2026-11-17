@@ -229,7 +229,7 @@ export async function revisarFala({ palavras }, { fetchImpl = fetch } = {}) {
 }
 
 // chamada simples ao Claude que devolve JSON (texto e, se vier, imagens em base64)
-async function claudeJson({ system, texto, imagens = [], max = 4000 }, { fetchImpl = fetch } = {}) {
+export async function claudeJson({ system, texto, imagens = [], max = 4000 }, { fetchImpl = fetch } = {}) {
   if (!config.anthropicKey) throw new Error('ANTHROPIC_API_KEY não configurada no worker');
   const content = [...imagens.map((b64) => ({ type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: b64 } })), { type: 'text', text: texto }];
   const r = await comRetentativa(fetchImpl, 'https://api.anthropic.com/v1/messages', {

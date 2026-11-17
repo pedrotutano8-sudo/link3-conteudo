@@ -1,0 +1,19 @@
+{
+  "ativo": true,
+  "marca": "GNX Group",
+  "logo": "gnx/logo-branco.png",
+  "fonte": "Montserrat",
+  "cores": {
+    "escuro": "#16207F",
+    "roxo": "#3A10C8",
+    "azul": "#0A33B0",
+    "verde": "#0E7A6A",
+    "destaque": "#F5C542",
+    "texto": "#FFFFFF"
+  },
+  "elemento": "gnx/elemento-x.png",
+  "arroba": "@gnxgroup_oficial",
+  "cta": "Saiba mais",
+  "assinatura": "+27 anos conectando pessoas e resultados",
+  "origem": "Proposta Layout GNX (Link 3): títulos Montserrat Negrito, paleta #16207F #3454AD #5F27E0 #683295, gradiente roxo-azul com cantos verde-água, elemento X listrado, dourado #F5C542"
+}
