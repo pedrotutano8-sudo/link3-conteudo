@@ -30,12 +30,14 @@ Elementos:
 - capitulos: 0 a 2 cartões de tela cheia quando a fala MUDA de assunto (ex.: começa a explicar um serviço, um diferencial, um resultado). "palavra" é o índice da palavra em que o cartão entra (ele fica 1,4 s). "rotulo" 1 ou 2 palavras em caixa alta (ex.: DIFERENCIAL), "titulo" até 5 palavras. Só entre 5 s e o fim menos 4 s.
 - impactos: 0 a 2 palavras isoladas muito fortes (número, resultado, adjetivo central) mostradas grandes; "palavra" é o índice, "texto" a palavra (pode ser o número escrito com algarismos).
 - lista: só se a pessoa enumerar 3 ou 4 itens (serviços, etapas, benefícios); cada item com "palavra" (índice em que o item é dito) e "texto" (até 4 palavras). Senão, lista vazia.
+- apresentacao: se a pessoa disser o próprio nome e/ou cargo, uma tarja com "nome" (como ela se apresenta) e "cargo" (curto, até 4 palavras; se não disser o cargo, deixe vazio), e "palavra" = índice em que ela diz o nome. Senão, null.
 - encerramento: "frase" de até 7 palavras para o cartão final (pode ser a ideia central do vídeo ou um convite).
-Responda só com JSON: {"gancho": {"linha1": "", "linha2": "", "destaque": ""}, "destaques": [], "capitulos": [{"palavra": 0, "rotulo": "", "titulo": ""}], "impactos": [{"palavra": 0, "texto": ""}], "lista": [{"palavra": 0, "texto": ""}], "encerramento": {"frase": ""}}`;
+- rosto: nas imagens (quadros do vídeo), onde fica a cabeça da pessoa, em porcentagem da altura do quadro: "topo" (topo do cabelo) e "base" (queixo). Se houver mais de um quadro, use a faixa que cobre todos.
+Responda só com JSON: {"gancho": {"linha1": "", "linha2": "", "destaque": ""}, "destaques": [], "capitulos": [{"palavra": 0, "rotulo": "", "titulo": ""}], "impactos": [{"palavra": 0, "texto": ""}], "lista": [{"palavra": 0, "texto": ""}], "apresentacao": {"palavra": 0, "nome": "", "cargo": ""}, "encerramento": {"frase": ""}, "rosto": {"topo": 0, "base": 0}}`;
 
-export async function planejarDesign({ palavras, duracao, titulo = '', broll = [], marca = '' }, { claudeJson }) {
+export async function planejarDesign({ palavras, duracao, titulo = '', broll = [], marca = '', quadros = [] }, { claudeJson }) {
   const texto = `MARCA: ${marca}\nTÍTULO SUGERIDO: ${titulo}\nDURAÇÃO: ${duracao.toFixed(1)} s\nB-ROLL JÁ PLANEJADO (não ponha capítulo nem impacto nesses intervalos): ${broll.map((b) => `${b.inicio.toFixed(1)}-${b.fim.toFixed(1)} s`).join(', ') || 'nenhum'}\n\nFALA (índice:palavra@segundo):\n${palavras.map((w, k) => `${k}:${w.p}@${w.i.toFixed(1)}`).join(' ')}`;
-  const r = await claudeJson({ system: PROMPT, texto, max: 4000 });
+  const r = await claudeJson({ system: PROMPT, texto, imagens: quadros, max: 4000 });
   return { plano: limparPlano(r.saida || {}, { palavras, duracao, broll }), usd: r.usd || 0, tokens: r.tokens || { entrada: 0, saida: 0 } };
 }
 
@@ -54,6 +56,17 @@ export function limparPlano(p, { palavras, duracao, broll = [] }) {
     capitulos: [], impactos: [], lista: [],
     encerramento: { frase: corta(p.encerramento?.frase, 8) },
   };
+  // rosto (porcentagem da altura) e duração do gancho: termina antes do primeiro B-roll
+  const r = p.rosto || {};
+  const topo = Number(r.topo), base = Number(r.base);
+  plano.rosto = Number.isFinite(topo) && Number.isFinite(base) && base > topo ? { topo: Math.max(0, Math.min(100, topo)), base: Math.max(0, Math.min(100, base)) } : null;
+  const b0 = broll.length ? Math.min(...broll.map((b) => b.inicio)) : Infinity;
+  plano.ganchoFim = +Math.max(1.6, Math.min(3.2, b0 - 0.15, duracao - 1)).toFixed(2);
+  const ap = p.apresentacao;
+  if (ap && ok(ap.palavra) && String(ap.nome || '').trim()) {
+    const t = Math.max(palavras[ap.palavra].i - 0.1, plano.ganchoFim + 0.15);
+    if (t + 2.6 < duracao - 1.5 && livre(t, t + 2.6)) { plano.apresentacao = { t: +t.toFixed(2), nome: corta(ap.nome, 4), cargo: corta(ap.cargo, 5) }; reservar(t, t + 2.6); }
+  }
   for (const c of (p.capitulos || []).filter((c) => ok(c.palavra)).slice(0, 2)) {
     const t = palavras[c.palavra].i - 0.05;
     if (t < 5 || t + 1.4 > duracao - 3.5 || !livre(t, t + 1.4)) continue;
@@ -114,6 +127,12 @@ export function montarHtml({ plano, palavras, duracao, cfg, logo = null, broll =
   const semLegenda = [...(plano.capitulos || []).map((x) => [x.t, x.t + 1.4]), ...(plano.lista?.length ? [[plano.lista[0].t, plano.listaFim]] : []), [duracao, total]];
   const fonte = (peso, estilo = 'normal') => `@font-face{font-family:'M';font-weight:${peso};font-style:${estilo};src:url('file://${FONTES}montserrat-latin-${peso}-${estilo}.woff2') format('woff2')}`;
   const g = plano.gancho || {};
+  const ganchoFim = plano.ganchoFim ?? Math.min(3.2, duracao - 1);
+  // gancho no alto quando a cabeça começa abaixo de 28% da altura; senão vai para baixo do queixo e a legenda espera ele sair
+  const rosto = plano.rosto;
+  const ganchoEmBaixo = Boolean(rosto && rosto.topo < 28);
+  const gTopo = ganchoEmBaixo ? Math.round(Math.min(1000, Math.max(700, rosto.base * 19.2 + 50))) : 250;
+  if (ganchoEmBaixo) semLegenda.push([0, ganchoFim + 0.1]);
   const linha2 = esc(g.linha2 || '').split(' ').map((w, k) => `<span class="gw" id="gw${k}"${g.destaque && w.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '') === g.destaque.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '') ? ' data-d="1"' : ''}>${w}</span>`).join(' ');
   const fundo = `background:
       radial-gradient(55% 32% at 0% 0%, ${c.verde}cc 0%, transparent 70%),
@@ -131,12 +150,12 @@ html,body{margin:0;padding:0;background:transparent;width:1080px;height:1920px;o
 .tela{position:absolute;left:0;top:0;width:1080px;height:1920px;${fundo}}
 .elem{position:absolute;background:url('${elemento}') center/contain no-repeat}
 /* gancho */
-#gsombra{left:0;top:0;width:1080px;height:760px;background:linear-gradient(to bottom, rgba(10,12,48,.78) 0%, rgba(10,12,48,.45) 55%, rgba(10,12,48,0) 100%)}
-#g1{left:80px;top:250px;width:920px;font-weight:500;font-size:54px;line-height:1.15;letter-spacing:.01em;color:rgba(255,255,255,.92);text-shadow:0 4px 18px rgba(0,0,0,.45)}
-#g2{left:80px;top:326px;width:920px;font-weight:900;font-size:124px;line-height:.98;letter-spacing:-.025em;text-shadow:0 8px 30px rgba(0,0,0,.45)}
+#gsombra{left:0;top:${ganchoEmBaixo ? gTopo - 220 : 0}px;width:1080px;height:${ganchoEmBaixo ? 760 : 760}px;background:${ganchoEmBaixo ? 'linear-gradient(to bottom, rgba(10,12,48,0) 0%, rgba(10,12,48,.72) 32%, rgba(10,12,48,.72) 68%, rgba(10,12,48,0) 100%)' : 'linear-gradient(to bottom, rgba(10,12,48,.78) 0%, rgba(10,12,48,.45) 55%, rgba(10,12,48,0) 100%)'}}
+#g1{left:80px;top:${gTopo}px;width:920px;font-weight:500;font-size:54px;line-height:1.15;letter-spacing:.01em;color:rgba(255,255,255,.92);text-shadow:0 4px 18px rgba(0,0,0,.45)}
+#g2{left:80px;top:${gTopo + 76}px;width:920px;font-weight:900;font-size:124px;line-height:.98;letter-spacing:-.025em;text-shadow:0 8px 30px rgba(0,0,0,.45)}
 #g2 .gw{display:inline-block;opacity:0}
 #g2 .gw[data-d]{color:${c.destaque};font-style:italic}
-#gbarra{left:80px;top:220px;width:120px;height:8px;border-radius:4px;background:${c.destaque}}
+#gbarra{left:80px;top:${gTopo - 30}px;width:120px;height:8px;border-radius:4px;background:${c.destaque}}
 #flash{left:0;top:0;width:1080px;height:1920px;background:#fff}
 /* legenda */
 .leg{left:50px;width:980px;top:1120px;text-align:center;font-weight:800;font-size:86px;line-height:1.08;letter-spacing:-.015em}
@@ -149,6 +168,12 @@ html,body{margin:0;padding:0;background:transparent;width:1080px;height:1920px;o
 .cap .rot i{display:block;width:14px;height:14px;border-radius:50%;background:${c.destaque};box-shadow:0 0 14px ${c.destaque}}
 .cap .tit{position:absolute;left:90px;top:730px;width:860px;font-weight:900;font-size:128px;line-height:1.0;letter-spacing:-.03em}
 .cap .marca{position:absolute;left:90px;bottom:200px;width:190px;height:86px;background:url('${logoUrl}') left center/contain no-repeat;opacity:.95}
+/* tarja de apresentação */
+#tarja{left:70px;top:900px;display:flex;align-items:stretch;border-radius:22px;overflow:hidden;box-shadow:0 18px 44px rgba(0,0,0,.45)}
+#tarja .barra{width:12px;background:${c.destaque}}
+#tarja .txt{padding:20px 34px 22px 26px;background:${c.escuro}e6}
+#tarja b{display:block;font-weight:900;font-size:52px;line-height:1.05;letter-spacing:-.02em}
+#tarja span{display:block;margin-top:6px;font-weight:500;font-size:32px;color:rgba(255,255,255,.88)}
 /* impacto */
 .imp{left:0;width:1080px;top:200px;text-align:center;font-weight:900;font-style:italic;font-size:170px;line-height:1;letter-spacing:-.03em;color:${c.destaque};text-shadow:0 12px 50px rgba(0,0,0,.55)}
 /* lista */
@@ -172,6 +197,7 @@ html,body{margin:0;padding:0;background:transparent;width:1080px;height:1920px;o
 <div class="x" id="g2">${linha2}</div>
 ${broll.map((b, k) => `<div class="x moldura" id="m${k}"></div>`).join('\n')}
 ${grupos.map((gr, k) => `<div class="x leg" id="l${k}">${gr.map((w) => `<span id="w${w.k}"${destaques.has(w.k) ? ' class="d"' : ''}>${esc(w.p.replace(/[.,;:!?…]+$/, ''))}</span>`).join('')}</div>`).join('\n')}
+${plano.apresentacao ? `<div class="x" id="tarja"><div class="barra"></div><div class="txt"><b>${esc(plano.apresentacao.nome)}</b>${plano.apresentacao.cargo ? `<span>${esc(plano.apresentacao.cargo)}</span>` : ''}</div></div>` : ''}
 ${(plano.impactos || []).map((m, k) => `<div class="x imp" id="i${k}">${esc(m.texto)}</div>`).join('\n')}
 ${plano.lista?.length ? `<div class="x lista" id="lista" style="opacity:1">${plano.lista.map((it, k) => `<div class="item" id="it${k}" style="top:${k * 122}px"><em>${k + 1}</em>${esc(it.texto)}</div>`).join('')}</div>` : ''}
 ${(plano.capitulos || []).map((x, k) => `<div class="x cap" id="c${k}"><div class="tela"><div class="grao"></div><div class="elem"></div><div class="rot"><i></i>${esc(x.rotulo)}</div><div class="tit">${esc(x.titulo)}</div><div class="marca"></div></div></div>`).join('\n')}
@@ -186,7 +212,7 @@ ${(plano.capitulos || []).map((x, k) => `<div class="x cap" id="c${k}"><div clas
   for(let i=0;i<im.data.length;i+=4){const v=(r()*255)|0;im.data[i]=im.data[i+1]=im.data[i+2]=v;im.data[i+3]=255}
   cx.putImageData(im,0,0);document.documentElement.style.setProperty('--grao','url('+cv.toDataURL()+')');
 
-  const D=${JSON.stringify({ duracao, total, pb: PB, cartao: CARTAO, broll: broll.map((b) => [b.inicio, b.fim]), grupos: grupos.map((gr) => gr.map((w) => [w.k, +w.i.toFixed(3), +w.f.toFixed(3)])), sem: semLegenda, caps: (plano.capitulos || []).map((x) => x.t), imps: (plano.impactos || []).map((x) => x.t), lista: (plano.lista || []).map((x) => x.t), listaFim: plano.listaFim || 0, ganchoFim: Math.min(3.2, duracao - 1) })};
+  const D=${JSON.stringify({ duracao, total, pb: PB, cartao: CARTAO, broll: broll.map((b) => [b.inicio, b.fim]), grupos: grupos.map((gr) => gr.map((w) => [w.k, +w.i.toFixed(3), +w.f.toFixed(3)])), sem: semLegenda, caps: (plano.capitulos || []).map((x) => x.t), imps: (plano.impactos || []).map((x) => x.t), lista: (plano.lista || []).map((x) => x.t), listaFim: plano.listaFim || 0, ganchoFim, tarja: plano.apresentacao ? plano.apresentacao.t : -1 })};
   const cl=(x)=>Math.max(0,Math.min(1,x)), eo=(p)=>1-Math.pow(1-p,3), eio=(p)=>p<.5?4*p*p*p:1-Math.pow(-2*p+2,3)/2;
   const back=(p)=>{const c1=1.70158,c3=c1+1;return 1+c3*Math.pow(p-1,3)+c1*Math.pow(p-1,2)};
   const $=(id)=>document.getElementById(id);
@@ -226,6 +252,9 @@ ${(plano.capitulos || []).map((x, k) => `<div class="x cap" id="c${k}"><div clas
       set(el,1,dentro(t,D.broll.map(([a,b])=>[a-0.05,b]))?'translateY(300px)':'');
       gr.forEach(([w,wi])=>{const p=cl((t-wi+0.08)/0.16); set($('w'+w),cl(p*1.4),'translateY('+(26*(1-eo(p))).toFixed(1)+'px) scale('+(0.92+0.08*eo(p)).toFixed(3)+')','filter:blur('+(7*(1-eo(p))).toFixed(1)+'px)')});
     });
+    // tarja de apresentação: desliza da esquerda, fica 2,6 s
+    if(D.tarja>=0){const a=D.tarja, b=a+2.6, el=$('tarja'); if(t<a||t>=b) set(el,0); else { const p=eo(cl((t-a)/0.4)), s=cl((b-t)/0.3);
+      set(el,Math.min(cl(p*1.4),s),'translateX('+(-120*(1-p)-40*(1-s)).toFixed(1)+'px)','clip-path:inset(0 '+(100*(1-p)).toFixed(1)+'% 0 0 round 22px)')}}
     // impacto
     D.imps.forEach((a,k)=>{const el=$('i'+k); if(t<a||t>=a+1.1){set(el,0);return}
       const p=cl((t-a)/0.28), s=cl((a+1.1-t)/0.22); set(el,Math.min(cl(p*1.5),s),'scale('+(1.35-0.35*back(p)).toFixed(3)+') translateY('+(-30*(1-s)).toFixed(1)+'px)','filter:blur('+(10*(1-eo(p))+6*(1-s)).toFixed(1)+'px)')});

@@ -8,6 +8,7 @@ import { escolherTrilha } from './acabamento.js';
 import { gerarAss } from './legenda.js';
 import { designDoKit, planejarDesign, montarHtml, renderizarCamada, mascaraCartao, CARTAO, CAUDA, PB, MARCAS_DIR } from './design.js';
 import { claudeJson } from './ia.js';
+import { config } from './config.js';
 
 const extensao = (nome, mime) => path.extname(nome || '') || ({ 'video/quicktime': '.mov', 'video/mp4': '.mp4' }[mime] || '.mp4');
 const limpo = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\w.-]+/g, ' ').trim();
@@ -100,7 +101,15 @@ export function criarEtapas({ db, drive, workDir, planejar = planejarBase, lote 
   // camada de design da marca (legenda, gancho, capítulos, cartões de B-roll, encerramento) feita no Chromium
   async function renderizarComDesign(job, e, roteiro, kit, cfg, saida, { previa, logo }) {
     if (!roteiro.design) {
-      const d = await planejarDesign({ palavras: roteiro.palavras, duracao: roteiro.duracao_final, titulo: roteiro.titulo, broll: roteiro.broll || [], marca: cfg.marca || '' }, { claudeJson });
+      // dois quadros do vídeo (enquadramento igual ao da edição) para a IA ver onde fica o rosto
+      const quadros = [];
+      for (const [k, [a, b]] of [roteiro.trechos[0], roteiro.trechos[Math.floor(roteiro.trechos.length / 2)]].filter(Boolean).entries()) {
+        const jpg = path.join(pasta(job), `quadro-${k}.jpg`);
+        const t = b == null ? a + 0.5 : a + Math.min(0.5, (b - a) / 2);
+        await rodar(config.ffmpeg, ['-y', '-ss', t.toFixed(2), '-i', e.bruto, '-frames:v', '1', '-vf', 'scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,scale=360:640', '-q:v', '4', jpg]).catch(() => null);
+        if (fs.existsSync(jpg)) quadros.push(fs.readFileSync(jpg).toString('base64'));
+      }
+      const d = await planejarDesign({ palavras: roteiro.palavras, duracao: roteiro.duracao_final, titulo: roteiro.titulo, broll: roteiro.broll || [], marca: cfg.marca || '', quadros }, { claudeJson });
       roteiro.design = d.plano;
       log(`job ${job.id}: design planejado (US$ ${d.usd.toFixed(4)})`);
     }
