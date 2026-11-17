@@ -6,7 +6,8 @@ import path from 'node:path';
 import { medir, montarComLogo, montarEdicao, rodar, juntarBrutos, acertarVolume, misturarTrilha } from './midia.js';
 import { escolherTrilha } from './acabamento.js';
 import { gerarAss } from './legenda.js';
-import { designDoKit, planejarDesign, montarHtml, renderizarCamada, mascaraCartao, CARTAO, CAUDA, PB, MARCAS_DIR } from './design.js';
+import { designDoKit, planejarDesign, montarHtml, renderizarCamada, mascaraCartao, CARTAO, MARCAS_DIR } from './design.js';
+import { fichaDoKit } from './estilos.js';
 import { claudeJson } from './ia.js';
 import { config } from './config.js';
 
@@ -92,7 +93,9 @@ export function criarEtapas({ db, drive, workDir, planejar = planejarBase, lote 
     fs.writeFileSync(ass, gerarAss({ palavras: roteiro.palavras, duracao: roteiro.duracao_final, kit: kit || {}, titulo: roteiro.titulo, ...(f.familia ? { fonte: f.familia } : {}) }));
     const broll = acabamento ? await acabamento.arquivosBroll(kit, roteiro.broll, { previa }).catch((err) => { log(`job ${job.id}: B-roll não carregou (${err.message})`); return []; }) : [];
     await montarEdicao(e.bruto, saida, { trechos: roteiro.trechos, ass, fontsDir: f.fontsDir, logo, previa, temAudio: e.info.temAudio, broll });
-    const trilha = e.info.temAudio ? escolherTrilha(kit) : null;
+    const ficha = fichaDoKit(kit);
+    roteiro.ficha = { estilo: ficha.estilo, nome: ficha.nome, versao: ficha.versao };
+    const trilha = e.info.temAudio && ficha.elementos.trilha ? escolherTrilha(kit) : null;
     if (trilha) await misturarTrilha(saida, trilha).catch((err) => log(`job ${job.id}: trilha não entrou (${err.message})`));
     if (e.info.temAudio) await acertarVolume(saida).catch(() => null);
     return saida;
@@ -109,7 +112,7 @@ export function criarEtapas({ db, drive, workDir, planejar = planejarBase, lote 
         await rodar(config.ffmpeg, ['-y', '-ss', t.toFixed(2), '-i', e.bruto, '-frames:v', '1', '-vf', 'scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,scale=360:640', '-q:v', '4', jpg]).catch(() => null);
         if (fs.existsSync(jpg)) quadros.push(fs.readFileSync(jpg).toString('base64'));
       }
-      const d = await planejarDesign({ palavras: roteiro.palavras, duracao: roteiro.duracao_final, titulo: roteiro.titulo, broll: roteiro.broll || [], marca: cfg.marca || '', quadros }, { claudeJson });
+      const d = await planejarDesign({ palavras: roteiro.palavras, duracao: roteiro.duracao_final, titulo: roteiro.titulo, broll: roteiro.broll || [], marca: cfg.marca || '', quadros, ficha: cfg.ficha }, { claudeJson });
       roteiro.design = d.plano;
       log(`job ${job.id}: design planejado (US$ ${d.usd.toFixed(4)})`);
     }
@@ -117,14 +120,15 @@ export function criarEtapas({ db, drive, workDir, planejar = planejarBase, lote 
     const brollPlano = (roteiro.broll || []).map((b) => (b.inicio < 3 ? { ...b, inicio: 3 } : b)).filter((b) => b.fim - b.inicio >= 1.2);
     const broll = acabamento ? await acabamento.arquivosBroll(kit, brollPlano, { previa: false }).catch((err) => { log(`job ${job.id}: B-roll não carregou (${err.message})`); return []; }) : [];
     const logoMarca = cfg.logo && fs.existsSync(path.join(MARCAS_DIR, cfg.logo)) ? path.join(MARCAS_DIR, cfg.logo) : logo;
-    const { html, total } = montarHtml({ plano: roteiro.design, palavras: roteiro.palavras, duracao: roteiro.duracao_final, cfg, logo: logoMarca, broll });
+    const { html, total, pb, cauda } = montarHtml({ plano: roteiro.design, palavras: roteiro.palavras, duracao: roteiro.duracao_final, cfg, logo: logoMarca, broll });
+    roteiro.ficha = { estilo: cfg.ficha.estilo, nome: cfg.ficha.nome, versao: cfg.ficha.versao };
     const camada = path.join(pasta(job), 'camada.mov');
     await renderizarCamada(html, { total, saida: camada, log: (m) => log(`job ${job.id}: ${m}`) });
     const mascara = mascaraCartao(path.join(pasta(job), 'cartao.pgm'));
     try {
-      await montarEdicao(e.bruto, saida, { trechos: roteiro.trechos, logo, previa, temAudio: e.info.temAudio, broll, design: { camada, cauda: CAUDA, pb: PB, cartao: { ...CARTAO, mascara } } });
+      await montarEdicao(e.bruto, saida, { trechos: roteiro.trechos, logo, previa, temAudio: e.info.temAudio, broll, design: { camada, cauda, pb, grade: cfg.el.grade, cartao: cfg.el.cartoes ? { ...CARTAO, mascara } : null } });
     } finally { fs.rmSync(camada, { force: true }); }
-    const trilha = e.info.temAudio ? escolherTrilha(kit) : null;
+    const trilha = e.info.temAudio && cfg.el.trilha ? escolherTrilha(kit) : null;
     if (trilha) await misturarTrilha(saida, trilha).catch((err) => log(`job ${job.id}: trilha não entrou (${err.message})`));
     if (e.info.temAudio) await acertarVolume(saida).catch(() => null);
     return saida;

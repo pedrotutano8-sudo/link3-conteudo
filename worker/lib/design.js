@@ -8,6 +8,7 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { config } from './config.js';
+import { fichaDoKit, contextoFicha, ELEMENTOS } from './estilos.js';
 
 const FONTES = fileURLToPath(new URL('../node_modules/@fontsource/montserrat/files/', import.meta.url));
 export const MARCAS_DIR = process.env.MARCAS_DIR || '/marcas';
@@ -17,10 +18,12 @@ export const CARTAO = { x: 70, y: 250, w: 940, h: 1100, raio: 44, sobe: 70, entr
 export const CAUDA = 2.4;      // segundos de encerramento depois da última fala
 export const PB = 1.0;         // abertura em preto e branco até aqui
 
+// identidade da marca (design.json) + ficha de edição. Sem identidade ou com estilo "Simples": sem camada de design.
 export function designDoKit(kit) {
   const d = kit?.acabamento?.design;
-  if (!d?.ativo) return null;
-  return { fonte: 'Montserrat', cta: 'Saiba mais', arroba: '', assinatura: '', ...d, cores: { escuro: '#16207F', roxo: '#5F27E0', azul: '#0A33B0', verde: '#0E7A6A', destaque: '#F5C542', texto: '#FFFFFF', ...(d.cores || {}) } };
+  const ficha = fichaDoKit(kit);
+  if (!d?.ativo || !ficha.design) return null;
+  return { fonte: 'Montserrat', cta: 'Saiba mais', arroba: '', assinatura: '', ...d, ficha, el: ficha.elementos, cores: { escuro: '#16207F', roxo: '#5F27E0', azul: '#0A33B0', verde: '#0E7A6A', destaque: '#F5C542', texto: '#FFFFFF', ...(d.cores || {}) } };
 }
 
 const PROMPT = `Você é diretor de arte de reels de empresas. O vídeo é uma pessoa falando para a câmera; por cima dela vai uma camada de design com a identidade da marca. Escolha o que entra e onde, como um editor premium faria — com critério, sem poluir.
@@ -35,14 +38,23 @@ Elementos:
 - rosto: nas imagens (quadros do vídeo), onde fica a cabeça da pessoa, em porcentagem da altura do quadro: "topo" (topo do cabelo) e "base" (queixo). Se houver mais de um quadro, use a faixa que cobre todos.
 Responda só com JSON: {"gancho": {"linha1": "", "linha2": "", "destaque": ""}, "destaques": [], "capitulos": [{"palavra": 0, "rotulo": "", "titulo": ""}], "impactos": [{"palavra": 0, "texto": ""}], "lista": [{"palavra": 0, "texto": ""}], "apresentacao": {"palavra": 0, "nome": "", "cargo": ""}, "encerramento": {"frase": ""}, "rosto": {"topo": 0, "base": 0}}`;
 
-export async function planejarDesign({ palavras, duracao, titulo = '', broll = [], marca = '', quadros = [] }, { claudeJson }) {
-  const texto = `MARCA: ${marca}\nTÍTULO SUGERIDO: ${titulo}\nDURAÇÃO: ${duracao.toFixed(1)} s\nB-ROLL JÁ PLANEJADO (não ponha capítulo nem impacto nesses intervalos): ${broll.map((b) => `${b.inicio.toFixed(1)}-${b.fim.toFixed(1)} s`).join(', ') || 'nenhum'}\n\nFALA (índice:palavra@segundo):\n${palavras.map((w, k) => `${k}:${w.p}@${w.i.toFixed(1)}`).join(' ')}`;
+// tempos que dependem do estilo: abertura em P&B e cauda de encerramento
+export function temposDesign(cfg) {
+  const el = cfg?.el || {};
+  return { pb: el.pb === false ? 0 : PB, cauda: el.encerramento === false ? 0 : CAUDA };
+}
+
+export async function planejarDesign({ palavras, duracao, titulo = '', broll = [], marca = '', quadros = [], ficha = null }, { claudeJson }) {
+  const desligados = ficha ? Object.entries(ficha.elementos).filter(([, v]) => !v).map(([k]) => k) : [];
+  const avisoDesl = desligados.length ? `\nELEMENTOS DESLIGADOS PARA ESTA MARCA (devolva vazio/null para eles): ${desligados.map((k) => ({ gancho: 'gancho', capitulos: 'capitulos', impactos: 'impactos', lista: 'lista', tarja: 'apresentacao', encerramento: 'encerramento' })[k]).filter(Boolean).join(', ') || 'nenhum'}` : '';
+  const texto = `${ficha ? contextoFicha(ficha) + '\n' : ''}${avisoDesl}\nMARCA: ${marca}\nTÍTULO SUGERIDO: ${titulo}\nDURAÇÃO: ${duracao.toFixed(1)} s\nB-ROLL JÁ PLANEJADO (não ponha capítulo nem impacto nesses intervalos): ${broll.map((b) => `${b.inicio.toFixed(1)}-${b.fim.toFixed(1)} s`).join(', ') || 'nenhum'}\n\nFALA (índice:palavra@segundo):\n${palavras.map((w, k) => `${k}:${w.p}@${w.i.toFixed(1)}`).join(' ')}`;
   const r = await claudeJson({ system: PROMPT, texto, imagens: quadros, max: 4000 });
-  return { plano: limparPlano(r.saida || {}, { palavras, duracao, broll }), usd: r.usd || 0, tokens: r.tokens || { entrada: 0, saida: 0 } };
+  return { plano: limparPlano(r.saida || {}, { palavras, duracao, broll, el: ficha?.elementos }), usd: r.usd || 0, tokens: r.tokens || { entrada: 0, saida: 0 } };
 }
 
 // confere o que a IA devolveu: índices válidos, sem sobreposição com B-roll, abertura ou fim
-export function limparPlano(p, { palavras, duracao, broll = [] }) {
+export function limparPlano(p, { palavras, duracao, broll = [], el = {} }) {
+  const liga = (k) => el[k] !== false;
   const n = palavras.length;
   const ok = (k) => Number.isInteger(k) && k >= 0 && k < n;
   const ocupado = broll.map((b) => [b.inicio - 0.6, b.fim + 0.6]);
@@ -51,7 +63,7 @@ export function limparPlano(p, { palavras, duracao, broll = [] }) {
   const corta = (s, max) => String(s || '').trim().split(/\s+/).slice(0, max).join(' ');
   const g = p.gancho || {};
   const plano = {
-    gancho: { linha1: corta(g.linha1, 6), linha2: corta(g.linha2, 5), destaque: String(g.destaque || '').trim() },
+    gancho: liga('gancho') ? { linha1: corta(g.linha1, 6), linha2: corta(g.linha2, 5), destaque: String(g.destaque || '').trim() } : { linha1: '', linha2: '', destaque: '' },
     destaques: [...new Set((p.destaques || []).filter(ok))],
     capitulos: [], impactos: [], lista: [],
     encerramento: { frase: corta(p.encerramento?.frase, 8) },
@@ -63,22 +75,22 @@ export function limparPlano(p, { palavras, duracao, broll = [] }) {
   const b0 = broll.length ? Math.min(...broll.map((b) => b.inicio)) : Infinity;
   plano.ganchoFim = +Math.max(1.6, Math.min(3.2, b0 - 0.15, duracao - 1)).toFixed(2);
   const ap = p.apresentacao;
-  if (ap && ok(ap.palavra) && String(ap.nome || '').trim()) {
+  if (liga('tarja') && ap && ok(ap.palavra) && String(ap.nome || '').trim()) {
     const t = Math.max(palavras[ap.palavra].i - 0.1, plano.ganchoFim + 0.15);
     if (t + 2.6 < duracao - 1.5 && livre(t, t + 2.6)) { plano.apresentacao = { t: +t.toFixed(2), nome: corta(ap.nome, 4), cargo: corta(ap.cargo, 5) }; reservar(t, t + 2.6); }
   }
-  for (const c of (p.capitulos || []).filter((c) => ok(c.palavra)).slice(0, 2)) {
+  for (const c of (liga('capitulos') ? p.capitulos || [] : []).filter((c) => ok(c.palavra)).slice(0, 2)) {
     const t = palavras[c.palavra].i - 0.05;
     if (t < 5 || t + 1.4 > duracao - 3.5 || !livre(t, t + 1.4)) continue;
     plano.capitulos.push({ t: +t.toFixed(2), rotulo: corta(c.rotulo, 2).toUpperCase(), titulo: corta(c.titulo, 6) });
     reservar(t, t + 1.4);
   }
-  const lista = (p.lista || []).filter((x) => ok(x.palavra)).sort((a, b) => a.palavra - b.palavra).slice(0, 4);
+  const lista = (liga('lista') ? p.lista || [] : []).filter((x) => ok(x.palavra)).sort((a, b) => a.palavra - b.palavra).slice(0, 4);
   if (lista.length >= 3) {
     const a = palavras[lista[0].palavra].i - 0.1, b = Math.min(duracao - 2.5, palavras[lista[lista.length - 1].palavra].f + 1.6);
     if (a > 3 && b > a && livre(a, b)) { plano.lista = lista.map((x) => ({ t: +(palavras[x.palavra].i - 0.1).toFixed(2), texto: corta(x.texto, 5) })); plano.listaFim = +b.toFixed(2); reservar(a, b); }
   }
-  for (const m of (p.impactos || []).filter((x) => ok(x.palavra)).slice(0, 2)) {
+  for (const m of (liga('impactos') ? p.impactos || [] : []).filter((x) => ok(x.palavra)).slice(0, 2)) {
     const t = palavras[m.palavra].i - 0.05;
     if (t < 3.2 || t + 1.1 > duracao - 2 || !livre(t, t + 1.1)) continue;
     plano.impactos.push({ t: +t.toFixed(2), texto: corta(m.texto, 2) });
@@ -118,22 +130,30 @@ const dataUrl = (arq) => {
  */
 export function montarHtml({ plano, palavras, duracao, cfg, logo = null, broll = [] }) {
   const c = cfg.cores;
-  const total = duracao + CAUDA;
+  const el = cfg.el || {};
+  const liga = (k) => el[k] !== false;
+  const { pb, cauda } = temposDesign(cfg);
+  const total = duracao + cauda;
+  // plano feito antes de um elemento ser desligado na ficha: o que está desligado não aparece
+  plano = { ...plano, capitulos: liga('capitulos') ? plano.capitulos : [], impactos: liga('impactos') ? plano.impactos : [], lista: liga('lista') ? plano.lista : [], apresentacao: liga('tarja') ? plano.apresentacao : null,
+    gancho: liga('gancho') ? plano.gancho : { linha1: '', linha2: '', destaque: '' } };
+  const temGancho = Boolean(plano.gancho?.linha1 || plano.gancho?.linha2);
+  const cartoes = liga('cartoes') ? broll : [];
   const elemento = dataUrl(cfg.elemento ? path.join(MARCAS_DIR, cfg.elemento) : '');
   const logoUrl = dataUrl(logo);
   const destaques = new Set(plano.destaques || []);
   const grupos = gruposLegenda(palavras);
   // janelas sem legenda: capítulos, lista (a lista ocupa o lugar dela) e encerramento
-  const semLegenda = [...(plano.capitulos || []).map((x) => [x.t, x.t + 1.4]), ...(plano.lista?.length ? [[plano.lista[0].t, plano.listaFim]] : []), [duracao, total]];
+  const semLegenda = [...(plano.capitulos || []).map((x) => [x.t, x.t + 1.4]), ...(plano.lista?.length ? [[plano.lista[0].t, plano.listaFim]] : []), ...(cauda > 0 ? [[duracao, total]] : [])];
   const fonte = (peso, estilo = 'normal') => `@font-face{font-family:'M';font-weight:${peso};font-style:${estilo};src:url('file://${FONTES}montserrat-latin-${peso}-${estilo}.woff2') format('woff2')}`;
   const g = plano.gancho || {};
   const b0 = broll.length ? Math.min(...broll.map((b) => b.inicio)) : Infinity;
-  const ganchoFim = Math.max(1.6, Math.min(3.2, b0 - 0.15, duracao - 1));
+  const ganchoFim = temGancho ? Math.max(1.6, Math.min(3.2, b0 - 0.15, duracao - 1)) : 0;
   // gancho no alto quando a cabeça começa abaixo de 28% da altura; senão vai para baixo do queixo e a legenda espera ele sair
   const rosto = plano.rosto;
   const ganchoEmBaixo = Boolean(rosto && rosto.topo < 28);
   const gTopo = ganchoEmBaixo ? Math.round(Math.min(1000, Math.max(700, rosto.base * 19.2 + 50))) : 250;
-  if (ganchoEmBaixo) semLegenda.push([0, ganchoFim + 0.1]);
+  if (temGancho && ganchoEmBaixo) semLegenda.push([0, ganchoFim + 0.1]);
   const linha2 = esc(g.linha2 || '').split(' ').map((w, k) => `<span class="gw" id="gw${k}"${g.destaque && w.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '') === g.destaque.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '') ? ' data-d="1"' : ''}>${w}</span>`).join(' ');
   const fundo = `background:
       radial-gradient(55% 32% at 0% 0%, ${c.verde}cc 0%, transparent 70%),
@@ -196,13 +216,13 @@ html,body{margin:0;padding:0;background:transparent;width:1080px;height:1920px;o
 <div class="x" id="gbarra"></div>
 <div class="x" id="g1">${esc(g.linha1)}</div>
 <div class="x fit" id="g2">${linha2}</div>
-${broll.map((b, k) => `<div class="x moldura" id="m${k}"></div>`).join('\n')}
+${cartoes.map((b, k) => `<div class="x moldura" id="m${k}"></div>`).join('\n')}
 ${grupos.map((gr, k) => `<div class="x leg" id="l${k}">${gr.map((w) => `<span id="w${w.k}"${destaques.has(w.k) ? ' class="d"' : ''}>${esc(w.p.replace(/[.,;:!?…]+$/, ''))}</span>`).join('')}</div>`).join('\n')}
 ${plano.apresentacao ? `<div class="x" id="tarja"><div class="barra"></div><div class="txt"><b>${esc(plano.apresentacao.nome)}</b>${plano.apresentacao.cargo ? `<span>${esc(plano.apresentacao.cargo)}</span>` : ''}</div></div>` : ''}
 ${(plano.impactos || []).map((m, k) => `<div class="x imp fit" id="i${k}">${esc(m.texto)}</div>`).join('\n')}
 ${plano.lista?.length ? `<div class="x lista" id="lista" style="opacity:1">${plano.lista.map((it, k) => `<div class="item" id="it${k}" style="top:${k * 122}px"><em>${k + 1}</em>${esc(it.texto)}</div>`).join('')}</div>` : ''}
 ${(plano.capitulos || []).map((x, k) => `<div class="x cap" id="c${k}"><div class="tela"><div class="grao"></div><div class="elem"></div><div class="rot"><i></i>${esc(x.rotulo)}</div><div class="tit fit">${esc(x.titulo)}</div><div class="marca"></div></div></div>`).join('\n')}
-<div class="x" id="fim" style="left:0;top:0;width:1080px;height:1920px"><div class="tela"><div class="grao"></div><div class="elem"></div><div class="col"><div class="logo"></div><div class="frase fit" style="width:900px">${esc(plano.encerramento?.frase || '')}</div>${cfg.assinatura ? `<div class="sub">${esc(cfg.assinatura)}</div>` : ''}<div class="cta">${esc(cfg.cta)} <span>→</span></div>${cfg.arroba ? `<div class="arroba">${esc(cfg.arroba)}</div>` : ''}</div></div></div>
+${cauda > 0 ? '' : '<!-- sem encerramento -->'}<div class="x" id="fim" style="${cauda > 0 ? '' : 'display:none;'}"left:0;top:0;width:1080px;height:1920px"><div class="tela"><div class="grao"></div><div class="elem"></div><div class="col"><div class="logo"></div><div class="frase fit" style="width:900px">${esc(plano.encerramento?.frase || '')}</div>${cfg.assinatura ? `<div class="sub">${esc(cfg.assinatura)}</div>` : ''}<div class="cta">${esc(cfg.cta)} <span>→</span></div>${cfg.arroba ? `<div class="arroba">${esc(cfg.arroba)}</div>` : ''}</div></div></div>
 <div class="x" id="flash"></div>
 </div>
 <script>
@@ -213,7 +233,7 @@ ${(plano.capitulos || []).map((x, k) => `<div class="x cap" id="c${k}"><div clas
   for(let i=0;i<im.data.length;i+=4){const v=(r()*255)|0;im.data[i]=im.data[i+1]=im.data[i+2]=v;im.data[i+3]=255}
   cx.putImageData(im,0,0);document.documentElement.style.setProperty('--grao','url('+cv.toDataURL()+')');
 
-  const D=${JSON.stringify({ duracao, total, pb: PB, cartao: CARTAO, broll: broll.map((b) => [b.inicio, b.fim]), grupos: grupos.map((gr) => gr.map((w) => [w.k, +w.i.toFixed(3), +w.f.toFixed(3)])), sem: semLegenda, caps: (plano.capitulos || []).map((x) => x.t), imps: (plano.impactos || []).map((x) => x.t), lista: (plano.lista || []).map((x) => x.t), listaFim: plano.listaFim || 0, ganchoFim, tarja: plano.apresentacao ? plano.apresentacao.t : -1 })};
+  const D=${JSON.stringify({ duracao, total, pb, cartao: CARTAO, broll: cartoes.map((b) => [b.inicio, b.fim]), grupos: grupos.map((gr) => gr.map((w) => [w.k, +w.i.toFixed(3), +w.f.toFixed(3)])), sem: semLegenda, caps: (plano.capitulos || []).map((x) => x.t), imps: (plano.impactos || []).map((x) => x.t), lista: (plano.lista || []).map((x) => x.t), listaFim: plano.listaFim || 0, ganchoFim, tarja: plano.apresentacao ? plano.apresentacao.t : -1 })};
   const cl=(x)=>Math.max(0,Math.min(1,x)), eo=(p)=>1-Math.pow(1-p,3), eio=(p)=>p<.5?4*p*p*p:1-Math.pow(-2*p+2,3)/2;
   const back=(p)=>{const c1=1.70158,c3=c1+1;return 1+c3*Math.pow(p-1,3)+c1*Math.pow(p-1,2)};
   const $=(id)=>document.getElementById(id);
@@ -231,9 +251,9 @@ ${(plano.capitulos || []).map((x, k) => `<div class="x cap" id="c${k}"><div clas
   window.__seek=function(t){
     sig.length=0;
     // flash na volta da cor
-    const pf=(t-D.pb)/0.18; set($('flash'), pf>=0&&pf<1?0.32*(1-pf):0);
+    const pf=(t-D.pb)/0.18; set($('flash'), D.pb>0&&pf>=0&&pf<1?0.32*(1-pf):0);
     // gancho
-    const gf=D.ganchoFim, saiG=cl((t-gf)/0.3);
+    const gf=D.ganchoFim, saiG=gf>0?cl((t-gf)/0.3):1;
     set($('gsombra'), cl(t/0.15)*(1-saiG));
     set($('gbarra'), t<gf+0.3?cl((t-0.02)/0.25)*(1-saiG):0, 'scaleX('+eo(cl((t-0.02)/0.35))+')', 'transform-origin:0 50%');
     const p1=eo(cl((t-0.05)/0.3));
@@ -274,7 +294,7 @@ ${(plano.capitulos || []).map((x, k) => `<div class="x cap" id="c${k}"><div clas
       set(x,0.95,'rotate(-6deg) translateY('+(-60*cl((t-a)/1.4)).toFixed(1)+'px)');
     });
     // encerramento
-    const f=$('fim'); if(t<D.duracao){set(f,0)} else {
+    const f=$('fim'); if(t<D.duracao||D.total<=D.duracao){set(f,0)} else {
       const p=eio(cl((t-D.duracao)/0.4)); set(f,1,'','clip-path:circle('+(p*1500).toFixed(0)+'px at 540px 1100px)');
       const q=(d)=>eo(cl((t-D.duracao-d)/0.4));
       set(f.querySelector('.logo'),q(0.15),'translateY('+(30*(1-q(0.15))).toFixed(1)+'px)');
@@ -297,7 +317,7 @@ ${(plano.capitulos || []).map((x, k) => `<div class="x cap" id="c${k}"><div clas
   });
 })();
 </script></body></html>`;
-  return { html, total };
+  return { html, total, pb, cauda };
 }
 
 // máscara do cartão (PGM em escala de cinza, cantos arredondados com antisserrilhado) para o alphamerge do ffmpeg

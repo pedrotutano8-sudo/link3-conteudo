@@ -129,10 +129,16 @@ export async function montarEdicao(entrada, saida, { trechos, ass, fontsDir, log
   let atual = '[v]', entradas = 1, audio = '[ac]';
   if (design) {
     // cauda para o encerramento, cor levemente quente, abertura em P&B e fundo desfocado/escurecido enquanto o cartão de B-roll está na tela
+    // (cada parte depende da ficha da marca: sem encerramento não há cauda, sem P&B não há abertura cinza, B-roll em tela cheia não desfoca o fundo)
     const janelas = (broll || []).map((b) => `between(t,${b.inicio.toFixed(2)},${b.fim.toFixed(2)})`).join('+') || '0';
-    partes.push(`[v]tpad=stop_mode=clone:stop_duration=${design.cauda},eq=contrast=1.05:saturation=1.08:gamma=0.98,colorbalance=rm=0.025:bm=-0.025,hue=s=0:enable='lt(t,${design.pb})',boxblur=22:2:enable='${janelas}',eq=brightness=-0.09:saturation=0.75:enable='${janelas}'[vd]`);
+    const f = [];
+    if (design.cauda > 0) f.push(`tpad=stop_mode=clone:stop_duration=${design.cauda}`);
+    if (design.grade !== false) f.push('eq=contrast=1.05:saturation=1.08:gamma=0.98,colorbalance=rm=0.025:bm=-0.025');
+    if (design.pb > 0) f.push(`hue=s=0:enable='lt(t,${design.pb})'`);
+    if (design.cartao && broll?.length) f.push(`boxblur=22:2:enable='${janelas}',eq=brightness=-0.09:saturation=0.75:enable='${janelas}'`);
+    partes.push(`[v]${f.join(',') || 'null'}[vd]`);
     atual = '[vd]';
-    if (temAudio) { partes.push(`[ac]apad=pad_dur=${design.cauda}[acd]`); audio = '[acd]'; }
+    if (temAudio && design.cauda > 0) { partes.push(`[ac]apad=pad_dur=${design.cauda}[acd]`); audio = '[acd]'; }
   }
   // imagens de apoio por cima da fala (o áudio continua o da pessoa); entram antes da logo e da legenda
   for (const [k, b] of (broll || []).entries()) {

@@ -128,6 +128,7 @@ export async function gancoECopy({ texto, palavras = null, cliente = {}, comando
     cliente.ctas?.length && `CTAs aceitos: ${cliente.ctas.join(' | ')}`,
     cliente.regras && `Nunca fazer: ${cliente.regras}`,
     cliente.observacoes && `Observações: ${cliente.observacoes}`,
+    cliente.ficha && cliente.ficha,
   ].filter(Boolean).join('\n');
   const pedido = [
     comando && `Pedido da equipe: ${comando}`,
@@ -270,10 +271,10 @@ Regras:
 Responda só com JSON: {"broll": [{"clipe": número do clipe, "de": índice da primeira palavra, "ate": índice da última palavra}]}`;
 
 // escolhe onde entram os clipes de apoio, em cima da fala já cortada (tempos do vídeo final)
-export async function escolherBroll({ palavras, clipes }, opts) {
+export async function escolherBroll({ palavras, clipes, contexto = '' }, opts) {
   const r = await claudeJson({
     system: PROMPT_BROLL,
-    texto: `CLIPES DISPONÍVEIS:\n${clipes.map((c, k) => `${k}: ${c.descricao} (${c.duracao.toFixed(1)} s)`).join('\n')}\n\nFALA DO VÍDEO (índice:palavra@segundo):\n${palavras.map((w, k) => `${k}:${w.p}@${w.i.toFixed(1)}`).join(' ')}`,
+    texto: `${contexto ? contexto + '\n\n' : ''}CLIPES DISPONÍVEIS:\n${clipes.map((c, k) => `${k}: ${c.descricao} (${c.duracao.toFixed(1)} s)`).join('\n')}\n\nFALA DO VÍDEO (índice:palavra@segundo):\n${palavras.map((w, k) => `${k}:${w.p}@${w.i.toFixed(1)}`).join(' ')}`,
     max: 4000,
   }, opts);
   const lista = Array.isArray(r.saida?.broll) ? r.saida.broll : [];

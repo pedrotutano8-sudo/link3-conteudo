@@ -6,6 +6,7 @@ import { config } from './config.js';
 import { calcularCortes, repeticoes } from './cortes.js';
 import * as iaPadrao from './ia.js';
 import { detectarSilencios, audioEditado } from './midia.js';
+import { fichaDoKit, contextoFicha } from './estilos.js';
 
 export function criarPlanejadorM1({ ia = iaPadrao, acabamento = null } = {}) {
   return async function planejarM1({ job, cliente, kit, info, ajuste, roteiroAnterior, bruto, pasta }) {
@@ -25,7 +26,9 @@ export function criarPlanejadorM1({ ia = iaPadrao, acabamento = null } = {}) {
       transcricao.motor = t.motor;
     }
 
-    const g = await ia.gancoECopy({ texto: transcricao.texto, palavras: transcricao.palavras, cliente, comando: job.comando, ajuste, anterior: roteiroAnterior });
+    // a ficha de edição da marca (estilo, sobre, briefing, ajustes) entra no contexto da IA
+    const ficha = fichaDoKit(kit);
+    const g = await ia.gancoECopy({ texto: transcricao.texto, palavras: transcricao.palavras, cliente: { ...(cliente || {}), ficha: contextoFicha(ficha) }, comando: job.comando, ajuste, anterior: roteiroAnterior });
     // erros de gravação e takes repetidos saem antes do corte de pausas (viram silêncio e são cortados junto)
     const fora = new Set();
     for (const [a, b] of g.remover || []) for (let k = a; k <= b; k++) fora.add(k);

@@ -86,6 +86,28 @@ const tag = (s) => `<span class="tag ${STATUS[s]?.[1] || ''}">${STATUS[s]?.[0] |
 const TIPO = { reel: 'Reel', carrossel: 'Carrossel', post: 'Post', lote: 'Lote por roteiro' };
 const ASSET = { logo: 'Logo principal', logo_branca: 'Logo branca', simbolo: 'Símbolo', fonte: 'Fonte', vinheta_abertura: 'Vinheta de abertura', vinheta_encerramento: 'Vinheta de encerramento', musica: 'Música', foto: 'Foto', manual: 'Manual de marca', referencia: 'Referência', outro: 'Outro' };
 
+// Ficha de edição: cópia de worker/lib/estilos.js (mudou lá, mudar aqui)
+const ELEMENTOS = { gancho: 'Título de abertura (gancho)', pb: 'Abertura em preto e branco', cartoes: 'B-roll em cartão flutuante (senão, tela cheia)', capitulos: 'Cartão de capítulo', impactos: 'Palavra de impacto', lista: 'Lista animada', tarja: 'Tarja de nome e cargo', encerramento: 'Encerramento com logo e chamada', trilha: 'Trilha de fundo', grade: 'Cor levemente quente' };
+const todos = (v) => Object.fromEntries(Object.keys(ELEMENTOS).map((k) => [k, v]));
+const ESTILOS = {
+  institucional: { nome: 'Institucional premium', descricao: 'Empresa, marca empregadora, serviço B2B. Abertura em P&B, B-roll em cartão, capítulos, tarja de nome e encerramento com logo. Ex.: GNX.', elementos: todos(true) },
+  criador: { nome: 'Criador / opinião', descricao: 'Pessoa falando de um assunto (notícia, opinião, dica). Corte seco, legenda grande, palavra de impacto e lista; B-roll em tela cheia; sem P&B, capítulo, tarja ou encerramento.', elementos: { ...todos(false), gancho: true, impactos: true, lista: true, trilha: true } },
+  promocional: { nome: 'Promocional / varejo', descricao: 'Oferta, produto, evento. Gancho forte, palavra de impacto, lista de benefícios, B-roll em cartão e encerramento com chamada.', elementos: { ...todos(true), pb: false, capitulos: false, tarja: false } },
+  simples: { nome: 'Simples (só legenda)', descricao: 'Cortes, legenda da marca, trilha e B-roll em tela cheia, sem camada de motion.', elementos: { ...todos(false), trilha: true } },
+};
+const fichaDoKit = (k) => { const ac = k?.acabamento || {}, f = ac.ficha || {}; const estilo = ESTILOS[f.estilo] ? f.estilo : ac.design?.ativo ? 'institucional' : 'simples';
+  return { estilo, sobre: f.sobre || '', briefing: f.briefing || '', referencias: f.referencias || [], ajustes: f.ajustes || [], versao: f.versao || 0, elementos: { ...ESTILOS[estilo].elementos, ...(f.elementos || {}) } }; };
+const CONFLITOS = [
+  [/sem (m[uú]sica|trilha)|n[aã]o (quer|coloc\w*|usa\w*) (m[uú]sica|trilha)/i, 'trilha', 'O briefing pede sem música, mas a trilha está ligada.'],
+  [/(sem|n[aã]o)\b[^.]{0,30}(preto e branco|p&b|pb\b)/i, 'pb', 'O briefing não quer preto e branco, mas a abertura em P&B está ligada.'],
+  [/sem (logo|encerramento|cart[aã]o final|vinheta final)/i, 'encerramento', 'O briefing não quer encerramento com logo, mas ele está ligado.'],
+  [/sem cap[ií]tulo/i, 'capitulos', 'O briefing não quer capítulo, mas ele está ligado.'],
+  [/sem (tarja|nome na tela)/i, 'tarja', 'O briefing não quer tarja de nome, mas ela está ligada.'],
+  [/sem (b-?roll|imagem de apoio)/i, 'cartoes', 'O briefing não quer B-roll em cartão, mas ele está ligado.'],
+];
+const conflitos = (texto, estilo, el) => { const out = CONFLITOS.filter(([re, k]) => re.test(texto) && el[k]).map((x) => x[2]);
+  if (/sem (anima[cç][aã]o|motion|efeito)/i.test(texto) && estilo !== 'simples') out.push('O briefing não quer animação, mas o estilo escolhido tem camada de motion. Use o estilo "Simples".'); return out; };
+
 const S = { aba: 'pedidos', perfil: null, clientes: [], kits: {}, jobs: [], filtro: { status: '', cliente: '' }, aberto: null };
 
 async function iniciar() {
@@ -217,8 +239,10 @@ async function abrirPedido(id, recarregar) {
       <div>
         <h3 style="margin-top:0">Comando</h3><p style="margin:0;white-space:pre-wrap">${esc(j.comando || '—')}</p>
         <p class="small mute">Arquivo: ${j.origem_drive_id ? `<a href="${linkDrive(j.origem_drive_id)}" target="_blank" rel="noopener">${esc(j.origem_nome || 'abrir no Drive')}</a>` : '—'}</p>
+        ${j.roteiro?.ficha ? `<p class="small mute" style="margin:6px 0 0">Ficha de edição usada: <b>${esc(j.roteiro.ficha.nome)}</b>${j.roteiro.ficha.versao ? ` · versão ${j.roteiro.ficha.versao}` : ''}</p>` : ''}
         <h3>Roteiro</h3>${roteiroSimples(j.roteiro)}
         ${j.status === 'previa_pronta' ? `<h3>Ajuste</h3><textarea id="ajuste" placeholder="Ex.: tira o trecho em que ele gagueja aos 12 s e deixa a legenda maior"></textarea>
+          <label class="small" style="display:block;margin-top:6px"><input type="checkbox" id="ajusteFicha"> Guardar na ficha da marca (vale para os próximos vídeos dela)</label>
           <div class="row" style="margin-top:10px"><button class="btn" id="btnAjuste">Pedir ajuste</button><span class="grow"></span><button class="btn acc" id="btnAprovar">Aprovar e enviar ao Drive</button></div>` : ''}
         <div class="row" style="margin-top:10px">${j.status === 'erro' ? '<button class="btn" id="btnReenviar">Tentar de novo</button>' : ''}
           ${!['entregue', 'cancelado', 'entregando'].includes(j.status) ? '<button class="btn sm red" id="btnCancelar">Cancelar pedido</button>' : ''}</div>
@@ -231,7 +255,18 @@ async function abrirPedido(id, recarregar) {
   $$('.respTxt').forEach((i) => (i.onkeydown = (e) => e.key === 'Enter' && responder(i.dataset.q, i.value)));
   const acao = async (fn, args, ok) => { const { error } = await sb.rpc(fn, args); toast(error ? 'Erro: ' + error.message : ok); await carregarJobs(); abrirPedido(id, true); render(true); };
   $('#btnAprovar') && ($('#btnAprovar').onclick = () => acao('aprovar_job', { p_job: id }, 'Aprovado. O arquivo final vai para o Drive.'));
-  $('#btnAjuste') && ($('#btnAjuste').onclick = () => { const t = $('#ajuste').value.trim(); if (!t) return toast('Descreva o ajuste'); acao('pedir_ajuste', { p_job: id, p_comando: t }, 'Ajuste enviado'); });
+  $('#btnAjuste') && ($('#btnAjuste').onclick = async () => {
+    const t = $('#ajuste').value.trim(); if (!t) return toast('Descreva o ajuste');
+    if ($('#ajusteFicha')?.checked) {
+      const { data: kt } = await sb.from('brand_kits').select('acabamento').eq('client_id', j.client_id).maybeSingle();
+      if (kt) {
+        const ac = kt.acabamento || {}, fi = ac.ficha || {};
+        const { error } = await sb.from('brand_kits').update({ acabamento: { ...ac, ficha: { ...fi, ajustes: [...(fi.ajustes || []), { data: new Date().toISOString(), texto: t, pedido: j.numero }], versao: (fi.versao || 0) + 1, atualizada_em: new Date().toISOString() } } }).eq('client_id', j.client_id);
+        if (error) toast('Ajuste não entrou na ficha: ' + error.message); else await carregarClientes();
+      }
+    }
+    acao('pedir_ajuste', { p_job: id, p_comando: t }, 'Ajuste enviado');
+  });
   $('#btnReenviar') && ($('#btnReenviar').onclick = () => acao('reenviar_job', { p_job: id }, 'Pedido voltou para a fila'));
   $('#btnCancelar') && ($('#btnCancelar').onclick = async () => { const { error } = await sb.from('jobs').update({ status: 'cancelado' }).eq('id', id); toast(error ? 'Erro: ' + error.message : 'Pedido cancelado'); await carregarJobs(); abrirPedido(id, true); render(true); });
   if (!recarregar || !$('#dlg').open) $('#dlg').showModal();
@@ -288,6 +323,8 @@ async function abrirCliente(id) {
   const k = S.kits[id] || { cores: {}, fontes: {}, estilo_legenda: {} };
   const cor = { principal: '#F0C41D', secundaria: '#161614', fundo: '#FFFFFF', texto: '#161614', ...k.cores };
   const leg = { posicao: 'baixo', caixa: true, destaque: 'principal', maiusculas: false, palavras: 3, ...k.estilo_legenda };
+  const ficha = fichaDoKit(k);
+  let ajustes = [...ficha.ajustes];
   const { data: assets } = id ? await sb.from('brand_assets').select('*').eq('client_id', id).order('created_at') : { data: [] };
   const opc = (tipos, sel) => `<option value="">—</option>` + (assets || []).filter((a) => tipos.includes(a.tipo)).map((a) => `<option value="${a.id}" ${sel === a.id ? 'selected' : ''}>${esc(a.nome)}</option>`).join('');
   $('#dlgTitulo').textContent = id ? c.nome : 'Novo cliente';
@@ -298,6 +335,19 @@ async function abrirCliente(id) {
     <div class="grid2"><div><label class="f">CTAs padrão (um por linha)</label><textarea name="ctas" placeholder="Chama no WhatsApp&#10;Link na bio">${esc((c.ctas || []).join('\n'))}</textarea></div>
       <div><label class="f">O que nunca fazer</label><textarea name="regras" placeholder="Nunca usar vermelho; não falar preço">${esc(c.regras || '')}</textarea></div></div>
     <label class="small" style="display:block;margin-top:10px"><input type="checkbox" name="ativo" ${c.ativo ? 'checked' : ''}> Cliente ativo</label>
+
+    <h3>Ficha de edição</h3>
+    <p class="small mute" style="margin:0 0 8px">Como os vídeos desta marca são editados. O estilo decide o que entra; o texto livre refina. Se o texto contradisser o estilo, vale o estilo, e o aviso aparece aqui.</p>
+    <div class="tipos" style="flex-wrap:wrap">${Object.entries(ESTILOS).map(([v, e]) => `<label style="min-width:180px;text-align:left"><input type="radio" name="ficha_estilo" value="${v}" ${ficha.estilo === v ? 'checked' : ''}><b>${esc(e.nome)}</b><div class="small mute" style="font-weight:400;margin-top:4px">${esc(e.descricao)}</div></label>`).join('')}</div>
+    <div class="grid2"><div><label class="f">Sobre a empresa (o que faz, para quem, o que a diferencia)</label><textarea name="ficha_sobre" placeholder="Ex.: empresa de terceirização de mão de obra com 27 anos de mercado; fala com RH e gestores">${esc(ficha.sobre)}</textarea></div>
+      <div><label class="f">Briefing de edição (o que a marca quer e não quer nos vídeos)</label><textarea name="ficha_briefing" placeholder="Ex.: ritmo calmo, nada de efeito exagerado; música baixa; sempre mostrar a estrutura da empresa">${esc(ficha.briefing)}</textarea></div></div>
+    <label class="f">Referências (links de reels que a marca gosta, um por linha)</label><textarea name="ficha_refs" style="min-height:56px" placeholder="https://www.instagram.com/reel/...">${esc(ficha.referencias.join('\n'))}</textarea>
+    <label class="f">O que entra no vídeo (marcado pelo estilo; ajuste se precisar)</label>
+    <div class="grid2" style="gap:2px 16px">${Object.entries(ELEMENTOS).map(([k, t]) => `<label class="small"><input type="checkbox" name="el_${k}" ${ficha.elementos[k] ? 'checked' : ''}> ${esc(t)}</label>`).join('')}</div>
+    <div id="fichaAvisos"></div>
+    <label class="f">Ajustes que a marca já pediu (valem para os próximos vídeos)</label>
+    <ul class="hist" id="fichaAjustes"></ul>
+    <div class="row" style="margin-top:6px"><input id="novoAjuste" placeholder="Ex.: música um pouco mais alta" style="flex:1;min-width:200px"><button type="button" class="btn sm" id="btnAddAjuste">Adicionar</button></div>
 
     <h3>Identidade visual</h3>
     <div class="row" style="align-items:flex-start;gap:22px">
@@ -334,7 +384,20 @@ async function abrirCliente(id) {
     $('#mockLeg').style.cssText = p + ';font-family:' + (f.fonte_titulo.value ? `'${f.fonte_titulo.value}',` : '') + 'sans-serif';
     $('#mockLeg').innerHTML = linhas.map((l, li) => `<div style="margin:3px 0"><span style="${f.leg_caixa.checked ? `background:${f.cor_fundo.value};` : 'text-shadow:0 2px 6px rgba(0,0,0,.6);'}color:${f.leg_caixa.checked ? f.cor_texto.value : '#fff'}">${l.map((w, wi) => li === 0 && wi === 1 ? `<span style="color:${dest}">${esc(w)}</span>` : esc(w)).join(' ')}</span></div>`).join('');
   };
-  f.oninput = desenhar; desenhar();
+  const elementosForm = () => Object.fromEntries(Object.keys(ELEMENTOS).map((x) => [x, f['el_' + x].checked]));
+  const avisos = () => {
+    const txt = `${f.ficha_briefing.value} ${ajustes.map((a) => a.texto).join(' ')}`;
+    const cs = conflitos(txt, f.ficha_estilo.value, elementosForm());
+    $('#fichaAvisos').innerHTML = cs.length ? `<div class="pergunta" style="margin-top:10px"><b>Atenção:</b> ${cs.map(esc).join('<br>')}</div>` : '';
+  };
+  const desenharAjustes = () => {
+    $('#fichaAjustes').innerHTML = ajustes.length ? ajustes.map((a, i) => `<li><span class="mute small" style="width:72px;flex-shrink:0">${a.data ? new Date(a.data).toLocaleDateString('pt-BR') : ''}</span><span style="flex:1">${esc(a.texto)}</span><button type="button" class="btn sm red" data-i="${i}">Tirar</button></li>`).join('') : '<li class="small mute">Nenhum ajuste guardado.</li>';
+    $$('#fichaAjustes button').forEach((b) => (b.onclick = () => { ajustes.splice(Number(b.dataset.i), 1); desenharAjustes(); avisos(); }));
+  };
+  $('#btnAddAjuste').onclick = () => { const t = $('#novoAjuste').value.trim(); if (!t) return; ajustes.push({ data: new Date().toISOString(), texto: t }); $('#novoAjuste').value = ''; desenharAjustes(); avisos(); };
+  $$('input[name=ficha_estilo]').forEach((r) => (r.onchange = () => { const e = ESTILOS[r.value].elementos; Object.keys(ELEMENTOS).forEach((x) => (f['el_' + x].checked = e[x])); avisos(); }));
+  desenharAjustes(); avisos();
+  f.oninput = () => { desenhar(); avisos(); }; desenhar();
   f.onsubmit = async (e) => {
     e.preventDefault();
     const reg = { nome: f.nome.value.trim(), instagram: f.instagram.value.trim() || null, pasta_brutos_id: idDrive(f.brutos.value) || null, pasta_finalizados_id: idDrive(f.finalizados.value) || null,
@@ -346,6 +409,8 @@ async function abrirCliente(id) {
       fontes: { titulo: f.fonte_titulo.value.trim() || null, corpo: f.fonte_corpo.value.trim() || null },
       estilo_legenda: { posicao: f.leg_posicao.value, destaque: f.leg_destaque.value, palavras: Number(f.leg_palavras.value) || 3, caixa: f.leg_caixa.checked, maiusculas: f.leg_maiusculas.checked } };
     if (id) Object.assign(kit, { logo_id: f.logo_id.value || null, vinheta_abertura_id: f.vin_ab.value || null, vinheta_encerramento_id: f.vin_enc.value || null });
+    kit.acabamento = { ...(k.acabamento || {}), ficha: { estilo: f.ficha_estilo.value, sobre: f.ficha_sobre.value.trim(), briefing: f.ficha_briefing.value.trim(),
+      referencias: f.ficha_refs.value.split('\n').map((x) => x.trim()).filter(Boolean), elementos: elementosForm(), ajustes, versao: ficha.versao + 1, atualizada_em: new Date().toISOString() } };
     const rk = S.kits[r.data.id] ? await sb.from('brand_kits').update(kit).eq('client_id', r.data.id) : await sb.from('brand_kits').insert(kit);
     if (rk.error) return toast('Cliente salvo, mas a identidade deu erro: ' + rk.error.message);
     toast('Cliente salvo'); await carregarClientes(); renderClientes(); if (!id) abrirCliente(r.data.id);

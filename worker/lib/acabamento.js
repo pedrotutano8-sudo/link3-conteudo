@@ -9,6 +9,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { config } from './config.js';
 import { rodar } from './midia.js';
+import { fichaDoKit, contextoFicha } from './estilos.js';
 
 const EXT_VIDEO = /\.(mov|mp4|m4v)$/i;
 const EXT_FOTO = /\.(heic|heif|jpe?g|png|webp)$/i;
@@ -80,7 +81,7 @@ export function criarAcabamento({ drive, ia, workDir, log = console.log }) {
     const livres = clipes.filter((c) => !usadoPorOutro(c));
     // com material livre suficiente, o Claude só vê o que ainda não foi usado; senão vê tudo, menos usados primeiro
     const oferta = livres.length >= 8 ? livres : [...clipes].sort((a, b) => (usos[chave(a)]?.length || 0) - (usos[chave(b)]?.length || 0));
-    const r = await ia.escolherBroll({ palavras, clipes: oferta.map((c) => ({ ...c, descricao: `${c.tipo === 'foto' ? '[foto] ' : ''}${c.descricao}${usadoPorOutro(c) ? ' (já usado em outro reel)' : ''}` })) });
+    const r = await ia.escolherBroll({ palavras, contexto: contextoFicha(fichaDoKit(kit)), clipes: oferta.map((c) => ({ ...c, descricao: `${c.tipo === 'foto' ? '[foto] ' : ''}${c.descricao}${usadoPorOutro(c) ? ' (já usado em outro reel)' : ''}` })) });
     const usados = new Set();
     const broll = [];
     for (const e of r.escolhas) {
