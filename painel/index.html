@@ -149,7 +149,7 @@ async function carregarJobs() {
 
 function render(soMenu) {
   const pend = S.jobs.filter((j) => ['aguardando_resposta', 'previa_pronta', 'erro'].includes(j.status)).length;
-  const abas = [['pedidos', 'Pedidos', pend], ['novo', 'Novo pedido'], ['clientes', 'Clientes'], ...(S.perfil.papel === 'admin' ? [['equipe', 'Equipe']] : [])];
+  const abas = [['pedidos', 'Pedidos', pend], ['novo', 'Novo pedido'], ['clientes', 'Clientes'], ['teste', 'Teste às cegas'], ...(S.perfil.papel === 'admin' ? [['equipe', 'Equipe']] : [])];
   const menu = abas.map(([k, t, n]) => `<button data-aba="${k}" class="${S.aba === k ? 'on' : ''}">${t}${n ? `<span class="n">${n}</span>` : ''}</button>`).join('');
   if (soMenu && $('nav')) { $('nav').innerHTML = menu; ligarMenu(); return; }
   $('#app').innerHTML = `<header><span class="marca">Link<b>3</b> · Conteúdo</span><nav>${menu}</nav><span class="grow"></span>
@@ -158,7 +158,7 @@ function render(soMenu) {
   ligarMenu(); renderConteudo();
 }
 function ligarMenu() { $$('nav button').forEach((b) => (b.onclick = () => { S.aba = b.dataset.aba; render(); })); }
-function renderConteudo() { ({ pedidos: renderPedidos, novo: renderNovo, clientes: renderClientes, equipe: renderEquipe })[S.aba](); }
+function renderConteudo() { ({ pedidos: renderPedidos, novo: renderNovo, clientes: renderClientes, teste: renderTeste, equipe: renderEquipe })[S.aba](); }
 const nomeCliente = (id) => S.clientes.find((c) => c.id === id)?.nome || '—';
 
 // ================= Pedidos =================
@@ -235,7 +235,7 @@ async function abrirPedido(id, recarregar) {
     ${j.status === 'erro' ? `<div class="pergunta" style="background:var(--red-soft);border-color:#f5c2bd"><b>Erro:</b> ${esc(j.erro)}<div class="small mute">A equipe da Liderate já recebeu o alerta.</div></div>` : ''}
     <div class="grid2">
       <div>${previa ? `<div class="previa">${previa}</div>` : `<div class="box empty">${['entregue'].includes(j.status) ? 'Entregue no Drive.' : 'A prévia aparece aqui quando o render terminar.'}</div>`}
-        ${j.final_drive_id ? `<p class="small"><a href="${linkDrive(j.final_drive_id)}" target="_blank" rel="noopener">Abrir o arquivo final no Drive</a></p>` : ''}</div>
+        ${j.final_drive_id ? `<p class="small"><a href="${linkDrive(j.final_drive_id)}" target="_blank" rel="noopener">Abrir o arquivo final no Drive</a>${S.perfil.papel === 'admin' ? ` · <a href="#" id="btnTeste">Pôr no teste às cegas</a>` : ''}</p>` : ''}</div>
       <div>
         <h3 style="margin-top:0">Comando</h3><p style="margin:0;white-space:pre-wrap">${esc(j.comando || '—')}</p>
         <p class="small mute">Arquivo: ${j.origem_drive_id ? `<a href="${linkDrive(j.origem_drive_id)}" target="_blank" rel="noopener">${esc(j.origem_nome || 'abrir no Drive')}</a>` : '—'}</p>
@@ -250,6 +250,11 @@ async function abrirPedido(id, recarregar) {
         <p class="small mute">Custo de IA: ${usd(j.custo_ia_usd)} · ${j.tokens_entrada + j.tokens_saida} tokens · ${j.segundos_audio} s de áudio</p>
       </div>
     </div>`;
+  $('#btnTeste') && ($('#btnTeste').onclick = async (e) => {
+    e.preventDefault();
+    const { error } = await sb.from('teste_reels').insert({ drive_id: j.final_drive_id, origem: 'sistema', client_id: j.client_id, job_id: j.id, rodada: S.rodada || '1' });
+    toast(error ? 'Erro: ' + error.message : 'Reel incluído no teste às cegas (rodada ' + (S.rodada || '1') + ')');
+  });
   const responder = async (q, v) => { if (!v.trim()) return; const { error } = await sb.rpc('responder_pergunta', { p_pergunta: q, p_resposta: v.trim() }); toast(error ? 'Erro: ' + error.message : 'Resposta enviada'); abrirPedido(id, true); };
   $$('.resp').forEach((b) => (b.onclick = () => responder(b.dataset.q, b.dataset.v)));
   $$('.respTxt').forEach((i) => (i.onkeydown = (e) => e.key === 'Enter' && responder(i.dataset.q, i.value)));
@@ -462,6 +467,69 @@ async function renderEquipe() {
     const { error } = await sb.from('convites').upsert({ email: f.email.value.trim().toLowerCase(), nome: f.nome.value.trim() || null, papel: f.papel.value, org_id: S.perfil.org_id });
     toast(error ? 'Erro: ' + error.message : 'Liberado. Agora crie o login no Supabase.'); renderEquipe();
   };
+}
+
+// ================= Teste às cegas (S5) =================
+// Reels do sistema e de editor misturados; quem vota não sabe a origem (a coluna nem chega ao navegador).
+const embaralhar = (lista, semente) => lista.map((x) => { let h = 2166136261; for (const ch of semente + x.id) h = Math.imul(h ^ ch.charCodeAt(0), 16777619); return [h >>> 0, x]; }).sort((a, b) => a[0] - b[0]).map((x) => x[1]);
+async function renderTeste() {
+  const admin = S.perfil.papel === 'admin';
+  const [rr, rv] = await Promise.all([sb.from('teste_reels').select('id, rodada, client_id, drive_id, created_at').order('created_at'), sb.from('teste_votos').select('*')]);
+  if (rr.error) { $('#conteudo').innerHTML = `<h2>Teste às cegas</h2><div class="box empty">O teste ainda não foi liberado neste painel (falta rodar a migração 005 no banco).<div class="small">${esc(rr.error.message)}</div></div>`; return; }
+  const rodadas = [...new Set((rr.data || []).map((r) => r.rodada))];
+  S.rodada = S.rodada && rodadas.includes(S.rodada) ? S.rodada : rodadas[rodadas.length - 1] || '1';
+  const reels = embaralhar((rr.data || []).filter((r) => r.rodada === S.rodada), S.perfil.id);
+  const votos = Object.fromEntries((rv.data || []).map((v) => [v.reel_id, v]));
+  const feitos = reels.filter((r) => votos[r.id]).length;
+  const opc = (nome, valor, lista) => lista.map(([v, t]) => `<label class="small" style="display:block"><input type="radio" name="${nome}" value="${v}" ${valor === v ? 'checked' : ''}> ${t}</label>`).join('');
+  $('#conteudo').innerHTML = `<h2>Teste às cegas</h2>
+    <p class="mute" style="margin-top:-6px">Alguns reels foram editados pelo sistema e outros por editor. Assista e responda como se fosse postar hoje. Ninguém vê o seu voto, e o resultado só aparece para o admin.</p>
+    <div class="row" style="margin-bottom:12px">${rodadas.length > 1 ? `<select id="selRodada" style="width:auto">${rodadas.map((r) => `<option ${r === S.rodada ? 'selected' : ''}>${esc(r)}</option>`).join('')}</select>` : ''}
+      <span class="tag ${feitos === reels.length && reels.length ? 's-ok' : 's-voce'}">Você avaliou ${feitos} de ${reels.length}</span></div>
+    ${reels.length ? `<div class="cards" style="grid-template-columns:repeat(auto-fill,minmax(290px,1fr))">${reels.map((r, i) => { const v = votos[r.id] || {}; return `<form class="card teste" data-id="${r.id}">
+      <b>Reel ${i + 1}</b>
+      <div class="previa" style="margin:8px 0"><iframe src="https://drive.google.com/file/d/${esc(r.drive_id)}/preview" style="width:100%;aspect-ratio:9/16;border:0;border-radius:10px" allow="autoplay" loading="lazy"></iframe></div>
+      <label class="f" style="margin-top:4px">Postaria assim?</label>${opc('postaria', v.postaria, [['sim', 'Sim, do jeito que está'], ['ajuste', 'Com um ajuste pequeno'], ['nao', 'Não postaria']])}
+      <label class="f">Nota</label><select name="nota">${['', 1, 2, 3, 4, 5].map((n) => `<option value="${n}" ${String(v.nota || '') === String(n) ? 'selected' : ''}>${n || '—'}</option>`).join('')}</select>
+      <label class="f">Quem você acha que editou?</label>${opc('palpite', v.palpite || '', [['sistema', 'Sistema'], ['editor', 'Editor'], ['', 'Não sei']])}
+      <label class="f">Comentário (opcional)</label><textarea name="comentario" style="min-height:52px" placeholder="O que mudaria?">${esc(v.comentario || '')}</textarea>
+      <div class="row" style="margin-top:8px"><span class="small mute">${v.id ? 'Avaliado' : ''}</span><span class="grow"></span><button class="btn sm acc">${v.id ? 'Atualizar' : 'Salvar'}</button></div></form>`; }).join('')}</div>`
+      : '<div class="box empty">Nenhum reel nesta rodada ainda.</div>'}
+    ${admin ? `<h3>Admin</h3><div class="grid2">
+      <form class="box pad" id="fTeste"><b>Incluir reel no teste</b>
+        <label class="f">Link do vídeo no Drive</label><input name="link" required placeholder="https://drive.google.com/file/d/...">
+        <div class="grid3"><div><label class="f">Quem editou</label><select name="origem"><option value="editor">Editor</option><option value="sistema">Sistema</option></select></div>
+          <div><label class="f">Cliente</label><select name="cliente"><option value="">—</option>${S.clientes.map((c) => `<option value="${c.id}">${esc(c.nome)}</option>`).join('')}</select></div>
+          <div><label class="f">Rodada</label><input name="rodada" value="${esc(S.rodada)}"></div></div>
+        <p class="small mute">O vídeo precisa abrir para quem vota (pasta da Link 3 ou link "qualquer pessoa com o link"). Reels do sistema também entram pelo botão "Pôr no teste às cegas" no pedido entregue.</p>
+        <div class="row"><span class="grow"></span><button class="btn acc">Incluir</button></div></form>
+      <div class="box pad" id="resTeste"><b>Resultado da rodada ${esc(S.rodada)}</b><div class="small mute">Carregando…</div></div></div>` : ''}`;
+  $('#selRodada') && ($('#selRodada').onchange = (e) => { S.rodada = e.target.value; renderTeste(); });
+  $$('form.teste').forEach((f) => (f.onsubmit = async (e) => {
+    e.preventDefault();
+    const postaria = f.querySelector('input[name=postaria]:checked')?.value, nota = Number(f.nota.value);
+    if (!postaria || !nota) return toast('Responda "postaria assim?" e a nota');
+    const { error } = await sb.from('teste_votos').upsert({ reel_id: f.dataset.id, user_id: S.perfil.id, postaria, nota, palpite: f.querySelector('input[name=palpite]:checked')?.value || null, comentario: f.comentario.value.trim() || null }, { onConflict: 'reel_id,user_id' });
+    toast(error ? 'Erro: ' + error.message : 'Avaliação salva'); if (!error) renderTeste();
+  }));
+  if (!admin) return;
+  $('#fTeste').onsubmit = async (e) => {
+    e.preventDefault(); const f = e.target; const id = idDrive(f.link.value);
+    if (!id) return toast('Cole o link do vídeo');
+    const { error } = await sb.from('teste_reels').insert({ drive_id: id, origem: f.origem.value, client_id: f.cliente.value || null, rodada: f.rodada.value.trim() || '1' });
+    toast(error ? 'Erro: ' + error.message : 'Reel incluído'); if (!error) { S.rodada = f.rodada.value.trim() || '1'; renderTeste(); }
+  };
+  const [{ data: res, error: e1 }, { data: gab }] = await Promise.all([sb.rpc('resultado_teste', { p_rodada: S.rodada }), sb.rpc('teste_gabarito', { p_rodada: S.rodada })]);
+  const pct = (n) => (n == null ? '—' : String(n).replace('.', ',') + '%');
+  const sis = (res || []).find((x) => x.origem === 'sistema');
+  const num = Object.fromEntries(reels.map((r, i) => [r.id, i + 1]));
+  $('#resTeste').innerHTML = `<b>Resultado da rodada ${esc(S.rodada)}</b>${e1 ? `<div class="small" style="color:var(--red)">${esc(e1.message)}</div>` : ''}
+    <table style="margin-top:8px"><tr><th>Quem editou</th><th class="num">Reels</th><th class="num">Votos</th><th class="num">Postaria</th><th class="num">Com ajuste</th><th class="num">Nota</th><th class="num">Acerto do palpite</th></tr>
+    ${(res || []).map((x) => `<tr><td>${x.origem === 'sistema' ? 'Sistema' : 'Editor'}</td><td class="num">${x.reels}</td><td class="num">${x.votos}</td><td class="num">${pct(x.postaria_pct)}</td><td class="num">${pct(x.ajuste_pct)}</td><td class="num">${x.nota_media == null ? '—' : String(x.nota_media).replace('.', ',')}</td><td class="num">${pct(x.acerto_palpite_pct)}</td></tr>`).join('')}</table>
+    <p class="small" style="margin:8px 0 0">${sis?.votos ? `Meta do projeto: 80% dos reels do sistema com "postaria assim". Hoje: <b>${pct(sis.postaria_pct)}</b> ${Number(sis.postaria_pct) >= 80 ? '✓' : ''}. Acerto do palpite perto de 50% = a equipe não distingue sistema de editor.` : 'Sem votos ainda.'}</p>
+    <h3>Reels da rodada</h3>${(gab || []).map((g) => `<div class="ativo"><span style="width:62px">Reel ${num[g.id] || '?'}</span><span class="tag ${g.origem === 'sistema' ? 's-rodando' : 's-fila'}">${g.origem}</span><span class="small mute" style="flex:1">${g.votos} votos · postaria ${pct(g.postaria_pct)} · nota ${g.nota_media == null ? '—' : String(g.nota_media).replace('.', ',')}</span><button class="btn sm red delReel" data-id="${g.id}">Tirar</button></div>`).join('') || '<div class="small mute">Nenhum.</div>'}
+    <p class="small mute">A numeração "Reel N" é a da sua tela (cada pessoa vê os reels em ordem diferente).</p>`;
+  $$('.delReel').forEach((b) => (b.onclick = async () => { const { error } = await sb.from('teste_reels').delete().eq('id', b.dataset.id); toast(error ? 'Erro: ' + error.message : 'Reel retirado'); renderTeste(); }));
 }
 
 $('#dlg').addEventListener('close', () => { S.aberto = null; });
