@@ -517,13 +517,16 @@ async function igDoPedido(j) {
     sb.from('publicacoes').select('id, status, permalink, erro, created_at, conta_id').eq('job_id', j.id).order('created_at', { ascending: false }),
   ]);
   if (error) { box.innerHTML = ''; return; }
-  const doCliente = (contas || []).filter((x) => x.client_id === j.client_id);
+  const jaSaiu = new Set((pubs || []).filter((p) => p.status === 'publicada').map((p) => p.conta_id));
+  const doClienteTodas = (contas || []).filter((x) => x.client_id === j.client_id);
+  const doCliente = doClienteTodas.filter((x) => !jaSaiu.has(x.id)); // não oferece publicar 2x na mesma conta
   const nomeConta = (cid) => '@' + ((contas || []).find((x) => x.id === cid)?.username || '?');
   const lista = (pubs || []).map((p) => `<div style="margin:2px 0">${nomeConta(p.conta_id)} · <b>${STATUS_PUB[p.status] || p.status}</b>${p.permalink ? ` · <a href="${esc(p.permalink)}" target="_blank" rel="noopener">ver no Instagram</a>` : ''}${p.erro ? ` · <span style="color:#b91c1c">${esc(p.erro)}</span>` : ''}</div>`).join('');
   const emAndamento = (pubs || []).some((p) => ['na_fila', 'publicando'].includes(p.status));
   box.classList.remove('mute');
   box.innerHTML = `<b>Instagram</b>${lista ? `<div style="margin-top:4px">${lista}</div>` : ''}
-    ${!doCliente.length ? `<p class="mute" style="margin:4px 0">Conecte o Instagram na ficha do cliente para publicar daqui.</p>`
+    ${!doClienteTodas.length ? `<p class="mute" style="margin:4px 0">Conecte o Instagram na ficha do cliente para publicar daqui.</p>`
+      : !doCliente.length ? ''
       : emAndamento ? '' : `<label class="f" style="margin-top:6px">Legenda do post</label><textarea id="igLegenda" rows="4">${esc(j.roteiro?.copy || '')}</textarea>
         <div class="row" style="gap:8px;margin-top:6px"><select id="igConta">${doCliente.map((x) => `<option value="${x.id}">@${esc(x.username)}</option>`).join('')}</select><span class="grow"></span><button type="button" class="btn acc" id="igPub">Publicar agora</button></div>`}`;
   $('#igPub') && ($('#igPub').onclick = async () => {

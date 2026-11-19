@@ -163,6 +163,15 @@ export function criarInstagram({ supabaseUrl, supabaseKey, drive, workDir, log =
       try {
         const conta = ok(await sb.from('instagram_contas').select('*').eq('id', p.conta_id).single());
         if (!conta.ativo || !conta.token) throw new Error('conta do Instagram desconectada: conecte de novo no painel');
+        if (p.job_id) {
+          // trava contra post duplicado: o mesmo pedido já saiu (ou está saindo) nessa conta
+          const iguais = ok(await sb.from('publicacoes').select('id').eq('job_id', p.job_id).eq('conta_id', p.conta_id).in('status', ['publicando', 'publicada']).neq('id', p.id).limit(1));
+          if (iguais.length) {
+            ok(await sb.from('publicacoes').update({ status: 'cancelada', erro: 'duplicada: esse pedido já foi publicado nessa conta' }).eq('id', p.id));
+            log(`instagram: publicação ${p.id} cancelada (duplicada)`);
+            continue;
+          }
+        }
         const job = p.job_id ? ok(await sb.from('jobs').select('numero, final_drive_id, roteiro').eq('id', p.job_id).single()) : null;
         if (!job?.final_drive_id) throw new Error('o pedido ainda não tem o vídeo final no Drive (aprove a prévia primeiro)');
         fs.mkdirSync(workDir, { recursive: true });
