@@ -43,25 +43,42 @@ export async function trocarCodigo(code, { fetchImpl = fetch } = {}) {
     } catch { /* fica com o curto; o painel avisa para reconectar */ }
   }
   const ids = new Set();
+  // diagnóstico (sem o token) para quando nenhuma conta aparecer
+  const diag = { tipo_token: String(token).slice(0, 4) };
   try {
     const d = await pedir(`https://graph.facebook.com/${V}/debug_token`, { params: { input_token: token, access_token: `${appId}|${secret}` }, fetchImpl });
+    diag.debug = { type: d.data?.type, scopes: d.data?.scopes, granular: d.data?.granular_scopes, user_id: d.data?.user_id ? 'sim' : 'não', profile_id: d.data?.profile_id ? 'sim' : 'não' };
     for (const g of d.data?.granular_scopes || []) if (/^instagram_/.test(g.scope)) (g.target_ids || []).forEach((x) => ids.add(String(x)));
+    if (d.data?.profile_id && /^instagram/.test(String(d.data?.type || '').toLowerCase())) ids.add(String(d.data.profile_id));
     if (!expira && d.data?.expires_at) expira = d.data.expires_at * 1000;
-  } catch { /* segue pelos outros caminhos */ }
+  } catch (e) { diag.debug_erro = e.message.slice(0, 160); }
   const contas = [];
   for (const id of ids) {
-    try { const c = await pedir(`https://graph.facebook.com/${V}/${id}`, { params: { fields: 'id,username,profile_picture_url' }, token, fetchImpl }); contas.push({ ig_user_id: c.id, username: c.username, foto: c.profile_picture_url || null, host: 'graph.facebook.com' }); } catch { /* conta sem acesso */ }
+    try { const c = await pedir(`https://graph.facebook.com/${V}/${id}`, { params: { fields: 'id,username,profile_picture_url' }, token, fetchImpl }); contas.push({ ig_user_id: c.id, username: c.username, foto: c.profile_picture_url || null, host: 'graph.facebook.com' }); } catch (e) { diag['alvo_' + id] = e.message.slice(0, 160); }
+  }
+  // contas do Instagram de empresas que a pessoa gerencia (login por empresa/usuário do sistema)
+  if (!contas.length) {
+    try {
+      const b = await pedir(`https://graph.facebook.com/${V}/me/businesses`, { params: { fields: 'id,name,owned_instagram_accounts{id,username,profile_picture_url},instagram_accounts{id,username,profile_picture_url}', limit: 50 }, token, fetchImpl });
+      diag.empresas = (b.data || []).length;
+      for (const bz of b.data || []) for (const c of [...(bz.owned_instagram_accounts?.data || []), ...(bz.instagram_accounts?.data || [])]) if (c?.id && !contas.some((x) => x.ig_user_id === c.id)) contas.push({ ig_user_id: c.id, username: c.username, foto: c.profile_picture_url || null, host: 'graph.facebook.com' });
+    } catch (e) { diag.empresas_erro = e.message.slice(0, 160); }
   }
   if (!contas.length) {
     try {
       const p = await pedir(`https://graph.facebook.com/${V}/me/accounts`, { params: { fields: 'instagram_business_account{id,username,profile_picture_url}', limit: 100 }, token, fetchImpl });
+      diag.paginas = (p.data || []).length;
       for (const pg of p.data || []) { const c = pg.instagram_business_account; if (c?.id) contas.push({ ig_user_id: c.id, username: c.username, foto: c.profile_picture_url || null, host: 'graph.facebook.com' }); }
-    } catch { /* token de Instagram, tenta abaixo */ }
+    } catch (e) { diag.paginas_erro = e.message.slice(0, 160); }
   }
   if (!contas.length) {
-    try { const me = await pedir(`https://graph.instagram.com/${V}/me`, { params: { fields: 'user_id,username,profile_picture_url' }, token, fetchImpl }); contas.push({ ig_user_id: String(me.user_id || me.id), username: me.username, foto: me.profile_picture_url || null, host: 'graph.instagram.com' }); } catch { /* nada */ }
+    try { const me = await pedir(`https://graph.instagram.com/${V}/me`, { params: { fields: 'user_id,username,profile_picture_url' }, token, fetchImpl }); contas.push({ ig_user_id: String(me.user_id || me.id), username: me.username, foto: me.profile_picture_url || null, host: 'graph.instagram.com' }); } catch (e) { diag.ig_me_erro = e.message.slice(0, 160); }
   }
-  if (!contas.length) throw new Error('A Meta não devolveu nenhuma conta do Instagram. Na tela de login, marque a conta do Instagram (profissional) do cliente.');
+  if (!contas.length) {
+    try { const me = await pedir(`https://graph.facebook.com/${V}/me`, { params: { fields: 'id,name' }, token, fetchImpl }); diag.me = me.name ? 'usuário do Facebook' : JSON.stringify(me).slice(0, 80); } catch (e) { diag.me_erro = e.message.slice(0, 160); }
+    const err = new Error('A Meta não devolveu nenhuma conta do Instagram. Na tela de login, marque a conta do Instagram (profissional) do cliente.');
+    err.diag = diag; throw err;
+  }
   return { token, expira: expira ? new Date(expira).toISOString() : null, contas };
 }
 
@@ -106,7 +123,8 @@ export function criarInstagram({ supabaseUrl, supabaseKey, drive, workDir, log =
         ok(await sb.from('instagram_conexoes').update({ status: 'ok', code: '-', contas: salvas }).eq('id', c.id));
         log(`instagram: conectado ${salvas.map((s) => '@' + s.username).join(', ')}`);
       } catch (e) {
-        await sb.from('instagram_conexoes').update({ status: 'erro', code: '-', erro: e.message.slice(0, 500) }).eq('id', c.id);
+        await sb.from('instagram_conexoes').update({ status: 'erro', code: '-', erro: e.message.slice(0, 500), contas: e.diag ? { diagnostico: e.diag } : null }).eq('id', c.id);
+        if (e.diag) log(`instagram: diagnóstico ${JSON.stringify(e.diag).slice(0, 1500)}`);
         log(`instagram: conexão falhou: ${e.message}`);
       }
     }
