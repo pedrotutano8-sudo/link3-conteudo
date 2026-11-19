@@ -94,7 +94,13 @@ export function limparPlano(p, { palavras, duracao, broll = [], el = {}, atras =
   // palavras atrás da pessoa (pedido do reel ou da marca): vêm antes dos outros elementos, porque foram pedidas
   if (atras) {
     plano.atras = []; plano.atrasFaltou = [];
-    const cabe = (t) => t >= plano.ganchoFim + 0.2 && t + ATRAS_DUR <= duracao - 1 && livre(t, t + ATRAS_DUR);
+    // tempo na tela: até 2,3 s, encurtando até 1,5 s quando o próximo elemento (B-roll, etc.) vem antes
+    const folga = (t) => {
+      if (t < plano.ganchoFim + 0.2 || ocupado.some(([x, y]) => t >= x && t < y)) return 0;
+      const prox = Math.min(duracao - 1, ...ocupado.filter(([x]) => x > t).map(([x]) => x));
+      return Math.min(ATRAS_DUR, prox - t);
+    };
+    const cabe = (t) => folga(t) >= 1.5;
     const limpa = (x) => String(x || '').replace(/[.,;:!?…"]+/g, '').trim();
     // automático: o que a IA escolheu (no índice dela ou em outra vez que a palavra é dita); se sobrar espaço,
     // completa com as palavras-chave da legenda (destaques) que cabem
@@ -110,9 +116,9 @@ export function limparPlano(p, { palavras, duracao, broll = [], el = {}, atras =
       const k = ks.find((k) => cabe(palavras[k].i - 0.15) && plano.atras.every((a) => Math.abs(a.t - (palavras[k].i - 0.15)) >= 3));
       if (k == null) { if (!reserva) plano.atrasFaltou.push(txt); continue; }
       usados.add(normal(txt));
-      const t = palavras[k].i - 0.15;
-      plano.atras.push({ t: +t.toFixed(2), fim: +(t + ATRAS_DUR).toFixed(2), texto: corta(limpa(txt), 3).toUpperCase() });
-      reservar(t, t + ATRAS_DUR);
+      const t = palavras[k].i - 0.15, d = folga(t);
+      plano.atras.push({ t: +t.toFixed(2), fim: +(t + d).toFixed(2), texto: corta(limpa(txt), 3).toUpperCase() });
+      reservar(t, t + d);
     }
     plano.atras.sort((a, b) => a.t - b.t);
   }

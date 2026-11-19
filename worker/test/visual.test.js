@@ -62,3 +62,11 @@ test('automático completa com as palavras-chave da legenda quando a IA erra o l
   assert.ok(p.atras.length >= 2);
   assert.ok(p.atras.every((a) => a.t >= p.ganchoFim + 0.2));
 });
+
+test('palavra atrás encurta para caber antes do B-roll (mínimo 1,5 s)', () => {
+  const broll = [{ inicio: 9.8, fim: 11.5 }];
+  const p = limparPlano({ gancho: { linha1: 'a', linha2: 'b' } }, { palavras, duracao: palavras.at(-1).f, broll, atras: ['equipe'] });
+  assert.equal(p.atras.length, 1);
+  const a = p.atras[0];
+  assert.ok(a.fim - a.t >= 1.5 && a.fim <= 9.8 - 0.6 + 1e-6 && a.fim - a.t < 2.3, JSON.stringify(a));
+});
