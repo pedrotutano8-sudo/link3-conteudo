@@ -416,10 +416,10 @@ html,body{margin:0;padding:0;background:transparent;width:1080px;height:1920px;o
 .tinta{left:0;top:0;width:1080px;height:1920px;background:radial-gradient(80% 60% at 50% 40%, ${c.escuro}66 0%, ${c.escuro}b3 100%)}
 .f{left:-1400px;white-space:nowrap;font-weight:900;font-style:italic;font-size:300px;line-height:1;letter-spacing:-.035em}
 .f i{font-style:normal;font-size:.45em;vertical-align:.45em;margin:0 .35em;opacity:.8}
-.f1{top:${y1}px;color:${c.destaque};text-shadow:0 14px 40px rgba(0,0,0,.35)}
+.f1{left:0;width:1080px;text-align:center;top:${y1}px;color:${c.destaque};text-shadow:0 14px 40px rgba(0,0,0,.35)}
 .f2{top:${y2}px;color:transparent;-webkit-text-stroke:5px ${c.texto || '#fff'};opacity:.9}
 </style></head><body><div id="r">
-${itens.map((a, k) => `<div class="x tinta" id="t${k}"></div><div class="x f f1" id="a${k}">${faixa(a.texto)}</div><div class="x f f2" id="b${k}">${faixa(a.texto)}</div>`).join('\n')}
+${itens.map((a, k) => `<div class="x tinta" id="t${k}"></div><div class="x f f1" id="a${k}">${esc(a.texto)}</div><div class="x f f2" id="b${k}">${faixa(a.texto)}</div>`).join('\n')}
 </div><script>
 (function(){
   const D=${JSON.stringify({ total, itens: itens.map((a) => [a.t, a.fim]) })};
@@ -430,10 +430,14 @@ ${itens.map((a, k) => `<div class="x tinta" id="t${k}"></div><div class="x f f1"
     D.itens.forEach(([a,b],k)=>{ const dentro=t>=a&&t<b; const p=eo(cl((t-a)/0.22)), s=cl((b-t)/0.28), o=dentro?Math.min(p,s):0;
       const v=dentro?(t-a)/(b-a):0;
       set($('t'+k), o, 'none');
-      set($('a'+k), o, 'translateX('+(-420*v).toFixed(1)+'px) scale('+(1.12-0.12*p).toFixed(3)+')');
+      set($('a'+k), o, 'translateX('+(70-140*v).toFixed(1)+'px) scale('+(1.12-0.12*p).toFixed(3)+')');
       set($('b'+k), o*0.9, 'translateX('+(-700+420*v).toFixed(1)+'px) scale('+(1.12-0.12*p).toFixed(3)+')'); });
     return sig.join('|'); };
-  Promise.all(['900 50px M','italic 900 50px M'].map((f)=>document.fonts.load(f))).then(()=>document.fonts.ready).then(()=>{window.__pronto=true});
+  // a faixa de cima mostra a palavra inteira: diminui a fonte até caber na largura (palavra longa)
+  Promise.all(['900 50px M','italic 900 50px M'].map((f)=>document.fonts.load(f))).then(()=>document.fonts.ready).then(()=>{
+    document.querySelectorAll('.f1').forEach((el)=>{ el.style.whiteSpace='nowrap'; let fs=300; const m=document.createElement('span'); m.textContent=el.textContent; m.style.cssText='position:absolute;visibility:hidden;white-space:nowrap;font:italic 900 300px M;letter-spacing:-.035em'; document.body.appendChild(m);
+      while(m.offsetWidth>960&&fs>120){fs-=6;m.style.fontSize=fs+'px';} el.style.fontSize=fs+'px'; el.style.marginTop=((300-fs)/2)+'px'; m.remove(); });
+    window.__pronto=true});
 })();
 </script></body></html>`;
   return { html, total };
