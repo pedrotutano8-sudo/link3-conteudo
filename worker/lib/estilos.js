@@ -14,6 +14,8 @@ export const ELEMENTOS = {
   encerramento: 'Encerramento com logo e chamada',
   trilha: 'Trilha de fundo',
   grade: 'Cor levemente quente',
+  ritmo: 'Ritmo dinâmico (zoom e transição rápida nos cortes)',
+  atras: 'Palavras-chave passando atrás da pessoa',
 };
 
 const tudo = (v) => Object.fromEntries(Object.keys(ELEMENTOS).map((k) => [k, v]));
@@ -23,7 +25,7 @@ export const ESTILOS = {
     nome: 'Institucional premium',
     descricao: 'Empresa, marca empregadora, serviço B2B. Abertura em P&B, B-roll em cartão, capítulos, tarja de nome e encerramento com logo. Ritmo calmo e acabamento de marca.',
     design: true,
-    elementos: tudo(true),
+    elementos: { ...tudo(true), ritmo: false, atras: false },
   },
   criador: {
     nome: 'Criador / opinião',
@@ -35,7 +37,7 @@ export const ESTILOS = {
     nome: 'Promocional / varejo',
     descricao: 'Oferta, produto, evento. Gancho forte, palavra de impacto e lista de benefícios, B-roll em cartão e encerramento com chamada. Sem P&B e sem capítulo.',
     design: true,
-    elementos: { ...tudo(true), pb: false, capitulos: false, tarja: false, citacao: false },
+    elementos: { ...tudo(true), pb: false, capitulos: false, tarja: false, citacao: false, ritmo: false, atras: false },
   },
   simples: {
     nome: 'Simples (só legenda)',

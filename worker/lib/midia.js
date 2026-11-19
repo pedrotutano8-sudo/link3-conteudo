@@ -92,15 +92,13 @@ export async function acertarVolume(arquivo, { meta = -14, tolerancia = 0.5 } = 
   return { ...(await medirVolume(arquivo)), ganho };
 }
 
-// Módulo 1: corta as pausas (trechos), monta 9:16, aplica logo e queima a legenda (.ass) num passo só.
-// Acabamento de cada corte: microtransição no áudio (sem estalo) e zoom alternado na imagem (o corte vira "punch-in").
-export async function montarEdicao(entrada, saida, { trechos, ass, fontsDir, logo, previa = false, larguraLogo = 160, margem = 48, temAudio = true, zoom = 1.1, tratarVoz = true, broll = [], design = null } = {}) {
-  // com a camada de design a prévia sai em 1080p: o cliente avalia acabamento, não dá para julgar em 540p
-  const [w, h] = previa && !design ? [540, 960] : [1080, 1920];
-  const lw = Math.round(larguraLogo * (w / 1080)), m = Math.round(margem * (w / 1080));
+// Cadeia de imagem dos cortes (sem áudio): recorta cada trecho, enquadra em 9:16 e alterna o zoom (punch-in).
+// Usada na edição e no recorte da pessoa (texto atrás), para os dois terem exatamente os mesmos quadros.
+// ritmo dinâmico: cada corte entra com um "soco" de zoom que assenta em 0,24 s, um borrão horizontal de 2 quadros
+// (parece um chicote) e, nos trechos longos, um avanço lento de câmera.
+export function cadeiaVideo(trechos, { w = 1080, h = 1920, zoom = 1.1, ritmo = false, entrada = '[0:v]', prefixo = 'v' } = {}) {
   const partes = [], rotulos = [];
   const lista = trechos?.length ? trechos : [[0, null]];
-  const fade = 0.015;
   // enquadramento alterna a cada corte (punch-in), mas só troca em trecho de pelo menos 1,2 s:
   // trecho curto mantém o enquadramento do anterior para não "piscar"
   let zAnt = zoom;
@@ -113,10 +111,43 @@ export async function montarEdicao(entrada, saida, { trechos, ass, fontsDir, log
     const fim = b == null ? '' : `:end=${b}`;
     const dur = b == null ? null : b - a;
     const z = zs[k];
-    const enquadrar = z === 1
-      ? `scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h}`
-      : `scale=${Math.round(w * z)}:${Math.round(h * z)}:force_original_aspect_ratio=increase,crop=${w}:${h}:(iw-${w})/2:(ih-${h})*0.35`;
-    partes.push(`[0:v]trim=start=${a}${fim},setpts=PTS-STARTPTS,${enquadrar},setsar=1[v${k}]`);
+    let enquadrar;
+    if (ritmo) {
+      const soco = k > 0 && (dur == null || dur >= 0.5) ? '+0.075*pow(max(0,1-t/0.24),2)' : '';
+      const avanco = dur && dur >= 1.5 ? `+0.04*min(t/${dur.toFixed(3)},1)` : '';
+      const Z = `${z}*(1${soco}${avanco})`;
+      enquadrar = `scale=w='trunc(${w}*${Z}/2)*2':h='trunc(${h}*${Z}/2)*2':eval=frame:force_original_aspect_ratio=increase,crop=${w}:${h}:(iw-${w})/2:(ih-${h})*0.35`;
+      if (soco) enquadrar += `,avgblur=sizeX=26:sizeY=2:enable='lt(t,0.07)'`;
+    } else {
+      enquadrar = z === 1
+        ? `scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h}`
+        : `scale=${Math.round(w * z)}:${Math.round(h * z)}:force_original_aspect_ratio=increase,crop=${w}:${h}:(iw-${w})/2:(ih-${h})*0.35`;
+    }
+    partes.push(`${entrada}trim=start=${a}${fim},setpts=PTS-STARTPTS,${enquadrar},setsar=1[${prefixo}${k}]`);
+    rotulos.push(`[${prefixo}${k}]`);
+  });
+  return { partes, rotulos, lista };
+}
+
+// instantes (no vídeo cortado) em que cada trecho começa, a partir do segundo
+export function instantesDeCorte(trechos) {
+  const out = []; let acc = 0;
+  (trechos || []).forEach(([a, b], k) => { if (k > 0) out.push(+acc.toFixed(3)); acc += (b ?? a) - a; });
+  return out;
+}
+
+// Módulo 1: corta as pausas (trechos), monta 9:16, aplica logo e queima a legenda (.ass) num passo só.
+// Acabamento de cada corte: microtransição no áudio (sem estalo) e zoom alternado na imagem (o corte vira "punch-in").
+export async function montarEdicao(entrada, saida, { trechos, ass, fontsDir, logo, previa = false, larguraLogo = 160, margem = 48, temAudio = true, zoom = 1.1, tratarVoz = true, broll = [], design = null } = {}) {
+  // com a camada de design a prévia sai em 1080p: o cliente avalia acabamento, não dá para julgar em 540p
+  const [w, h] = previa && !design ? [540, 960] : [1080, 1920];
+  const lw = Math.round(larguraLogo * (w / 1080)), m = Math.round(margem * (w / 1080));
+  const fade = 0.015;
+  const cv = cadeiaVideo(trechos, { w, h, zoom, ritmo: Boolean(design?.ritmo) });
+  const partes = [...cv.partes], rotulos = [];
+  cv.lista.forEach(([a, b], k) => {
+    const fim = b == null ? '' : `:end=${b}`;
+    const dur = b == null ? null : b - a;
     if (temAudio) {
       const fades = dur && dur > 4 * fade ? `,afade=t=in:d=${fade},afade=t=out:st=${(dur - fade).toFixed(3)}:d=${fade}` : '';
       partes.push(`[0:a]atrim=start=${a}${fim},asetpts=PTS-STARTPTS${fades}[a${k}]`);
@@ -124,7 +155,9 @@ export async function montarEdicao(entrada, saida, { trechos, ass, fontsDir, log
     rotulos.push(temAudio ? `[v${k}][a${k}]` : `[v${k}]`);
   });
   const n = rotulos.length;
-  partes.push(`${rotulos.join('')}concat=n=${n}:v=1:a=${temAudio ? 1 : 0}[v]${temAudio ? '[ac]' : ''}`);
+  partes.push(`${rotulos.join('')}concat=n=${n}:v=1:a=${temAudio ? 1 : 0}${design?.atras ? '[v0c]' : '[v]'}${temAudio ? '[ac]' : ''}`);
+  // texto atrás da pessoa: a máscara foi feita a 30 quadros/s sobre esta mesma cadeia, então o vídeo também vai a 30
+  if (design?.atras) partes.push('[v0c]fps=30[v]');
   const args = ['-y', '-i', entrada];
   let atual = '[v]', entradas = 1, audio = '[ac]';
   if (design) {
@@ -139,6 +172,19 @@ export async function montarEdicao(entrada, saida, { trechos, ass, fontsDir, log
     partes.push(`[v]${f.join(',') || 'null'}[vd]`);
     atual = '[vd]';
     if (temAudio && design.cauda > 0) { partes.push(`[ac]apad=pad_dur=${design.cauda}[acd]`); audio = '[acd]'; }
+    // palavras atrás da pessoa: fundo + texto, e por cima a própria pessoa recortada pela máscara
+    if (design.atras) {
+      const at = design.atras;
+      args.push('-i', at.camada); const ic = entradas++;
+      args.push('-i', at.mascara); const imk = entradas++;
+      const jan = at.janelas.map(([a, b]) => `between(t,${a.toFixed(2)},${b.toFixed(2)})`).join('+') || '0';
+      partes.push(`[vd]split=2[vdf][vdp]`);
+      partes.push(`[vdf][${ic}:v]overlay=0:0:eof_action=pass:format=auto[vdt]`);
+      partes.push(`[${imk}:v]scale=${w}:${h},format=gray,tpad=stop_mode=clone:stop_duration=${((design.cauda || 0) + 1).toFixed(2)}[mkp]`);
+      partes.push(`[vdp][mkp]alphamerge[pes]`);
+      partes.push(`[vdt][pes]overlay=0:0:enable='${jan}':format=auto,format=yuv420p[vat]`);
+      atual = '[vat]';
+    }
   }
   // imagens de apoio por cima da fala (o áudio continua o da pessoa); entram antes da logo e da legenda
   for (const [k, b] of (broll || []).entries()) {

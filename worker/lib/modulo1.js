@@ -7,10 +7,20 @@ import { calcularCortes, repeticoes } from './cortes.js';
 import * as iaPadrao from './ia.js';
 import { detectarSilencios, audioEditado } from './midia.js';
 import { fichaDoKit, contextoFicha } from './estilos.js';
+import { lerPedidoVisual, semLinhasVisuais, mesclarVisual } from './visual.js';
 
 export function criarPlanejadorM1({ ia = iaPadrao, acabamento = null } = {}) {
   return async function planejarM1({ job, cliente, kit, info, ajuste, roteiroAnterior, bruto, pasta }) {
     const custo = { custo_ia_usd: 0, tokens_entrada: 0, tokens_saida: 0, segundos_audio: 0 };
+    // pedidos visuais (RITMO, PALAVRAS-CHAVE) não vão para a IA de cortes: ficam guardados no roteiro para o design
+    const visual = mesclarVisual(lerPedidoVisual(job.comando, { soRotulo: true }), roteiroAnterior?.visual, lerPedidoVisual(ajuste));
+    const ajusteFala = semLinhasVisuais(ajuste);
+    const comandoFala = semLinhasVisuais(job.comando, { soRotulo: true });
+    // ajuste só visual: mantém os cortes como estão e refaz só o design
+    if (ajuste && !ajusteFala && roteiroAnterior?.trechos?.length) {
+      const { design, ...resto } = roteiroAnterior;
+      return { roteiro: { ...resto, visual }, custo };
+    }
 
     // transcrição: reaproveita a do roteiro anterior (ajuste não paga de novo)
     let transcricao = roteiroAnterior?.transcricao;
@@ -28,7 +38,7 @@ export function criarPlanejadorM1({ ia = iaPadrao, acabamento = null } = {}) {
 
     // a ficha de edição da marca (estilo, sobre, briefing, ajustes) entra no contexto da IA
     const ficha = fichaDoKit(kit);
-    const g = await ia.gancoECopy({ texto: transcricao.texto, palavras: transcricao.palavras, cliente: { ...(cliente || {}), ficha: contextoFicha(ficha) }, comando: job.comando, ajuste, anterior: roteiroAnterior });
+    const g = await ia.gancoECopy({ texto: transcricao.texto, palavras: transcricao.palavras, cliente: { ...(cliente || {}), ficha: contextoFicha(ficha) }, comando: comandoFala, ajuste: ajusteFala, anterior: roteiroAnterior });
     // erros de gravação e takes repetidos saem antes do corte de pausas (viram silêncio e são cortados junto)
     const fora = new Set();
     for (const [a, b] of g.remover || []) for (let k = a; k <= b; k++) fora.add(k);
@@ -107,6 +117,7 @@ export function criarPlanejadorM1({ ia = iaPadrao, acabamento = null } = {}) {
         transcricao,
         formato: '1080x1920',
         logo: Boolean(kit?.logo_id),
+        visual,
       },
       custo,
     };

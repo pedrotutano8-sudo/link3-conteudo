@@ -88,12 +88,17 @@ const TIPO = { reel: 'Reel', carrossel: 'Carrossel', post: 'Post', lote: 'Lote p
 const ASSET = { logo: 'Logo principal', logo_branca: 'Logo branca', simbolo: 'Símbolo', fonte: 'Fonte', vinheta_abertura: 'Vinheta de abertura', vinheta_encerramento: 'Vinheta de encerramento', musica: 'Música', foto: 'Foto', manual: 'Manual de marca', referencia: 'Referência', outro: 'Outro' };
 
 // Ficha de edição: cópia de worker/lib/estilos.js (mudou lá, mudar aqui)
-const ELEMENTOS = { gancho: 'Título de abertura (gancho)', pb: 'Abertura em preto e branco', cartoes: 'B-roll em cartão flutuante (senão, tela cheia)', capitulos: 'Cartão de capítulo', impactos: 'Palavra de impacto', lista: 'Lista animada', citacao: 'Citação em destaque', tarja: 'Tarja de nome e cargo', encerramento: 'Encerramento com logo e chamada', trilha: 'Trilha de fundo', grade: 'Cor levemente quente' };
+// modelo do campo "Ajuste" (o worker lê RITMO e PALAVRAS-CHAVE em worker/lib/visual.js; TAKES e TIRAR vão para a IA de cortes)
+const MODELO_AJUSTE = `TAKES: use só a parte em que ele fala "[começo da frase]" até "[fim da frase]".
+TIRAR: corta o trecho em que ele fala "[frase que quer tirar]".
+PALAVRAS-CHAVE: coloca as palavras "[palavra 1]", "[palavra 2]" e "[palavra 3]" passando por trás dele.
+RITMO: deixa as transições mais rápidas e dinâmicas.`;
+const ELEMENTOS = { gancho: 'Título de abertura (gancho)', pb: 'Abertura em preto e branco', cartoes: 'B-roll em cartão flutuante (senão, tela cheia)', capitulos: 'Cartão de capítulo', impactos: 'Palavra de impacto', lista: 'Lista animada', citacao: 'Citação em destaque', tarja: 'Tarja de nome e cargo', encerramento: 'Encerramento com logo e chamada', trilha: 'Trilha de fundo', grade: 'Cor levemente quente', ritmo: 'Ritmo dinâmico (zoom e transição rápida nos cortes)', atras: 'Palavras-chave passando atrás da pessoa' };
 const todos = (v) => Object.fromEntries(Object.keys(ELEMENTOS).map((k) => [k, v]));
 const ESTILOS = {
-  institucional: { nome: 'Institucional premium', descricao: 'Empresa, marca empregadora, serviço B2B. Abertura em P&B, B-roll em cartão, capítulos, tarja de nome e encerramento com logo. Ex.: GNX.', elementos: todos(true) },
+  institucional: { nome: 'Institucional premium', descricao: 'Empresa, marca empregadora, serviço B2B. Abertura em P&B, B-roll em cartão, capítulos, tarja de nome e encerramento com logo. Ex.: GNX.', elementos: { ...todos(true), ritmo: false, atras: false } },
   criador: { nome: 'Criador / opinião', descricao: 'Pessoa falando de um assunto (notícia, opinião, dica). Corte seco, legenda grande, palavra de impacto e lista; B-roll em tela cheia; sem P&B, capítulo, tarja ou encerramento.', elementos: { ...todos(false), gancho: true, impactos: true, lista: true, citacao: true, trilha: true } },
-  promocional: { nome: 'Promocional / varejo', descricao: 'Oferta, produto, evento. Gancho forte, palavra de impacto, lista de benefícios, B-roll em cartão e encerramento com chamada.', elementos: { ...todos(true), pb: false, capitulos: false, tarja: false, citacao: false } },
+  promocional: { nome: 'Promocional / varejo', descricao: 'Oferta, produto, evento. Gancho forte, palavra de impacto, lista de benefícios, B-roll em cartão e encerramento com chamada.', elementos: { ...todos(true), pb: false, capitulos: false, tarja: false, citacao: false, ritmo: false, atras: false } },
   simples: { nome: 'Simples (só legenda)', descricao: 'Cortes, legenda da marca, trilha e B-roll em tela cheia, sem camada de motion.', elementos: { ...todos(false), trilha: true } },
 };
 const fichaDoKit = (k) => { const ac = k?.acabamento || {}, f = ac.ficha || {}; const estilo = ESTILOS[f.estilo] ? f.estilo : ac.design?.ativo ? 'institucional' : 'simples';
@@ -241,9 +246,11 @@ async function abrirPedido(id, recarregar) {
         <h3 style="margin-top:0">Comando</h3><p style="margin:0;white-space:pre-wrap">${esc(j.comando || '—')}</p>
         <p class="small mute">Arquivo: ${j.origem_drive_id ? `<a href="${linkDrive(j.origem_drive_id)}" target="_blank" rel="noopener">${esc(j.origem_nome || 'abrir no Drive')}</a>` : '—'}</p>
         ${Array.isArray(j.origens) && j.origens.length > 1 ? `<p class="small mute" style="margin-top:-4px">Takes, na ordem: ${j.origens.map((o, k) => `<a href="${linkDrive(o.id)}" target="_blank" rel="noopener">${k + 1}. ${esc(o.nome || 'take')}</a>${o.incluido ? ' <span class="tag s-voce">incluído</span>' : ''}`).join(' · ')}</p>` : ''}
-        ${j.roteiro?.ficha ? `<p class="small mute" style="margin:6px 0 0">Ficha de edição usada: <b>${esc(j.roteiro.ficha.nome)}</b>${j.roteiro.ficha.versao ? ` · versão ${j.roteiro.ficha.versao}` : ''}</p>` : ''}
+        ${j.roteiro?.ficha ? `<p class="small mute" style="margin:6px 0 0">Ficha de edição usada: <b>${esc(j.roteiro.ficha.nome)}</b>${j.roteiro.ficha.versao ? ` · versão ${j.roteiro.ficha.versao}` : ''}${j.roteiro.ficha.ritmo ? ' · <b>ritmo dinâmico</b>' : ''}${j.roteiro.ficha.atras?.length ? ` · palavras atrás: <b>${esc(j.roteiro.ficha.atras.join(', '))}</b>` : ''}</p>` : ''}
+        ${j.roteiro?.design?.atrasFaltou?.length ? `<p class="small" style="margin:4px 0 0;color:#b45309">Não deu para colocar atrás da pessoa: ${esc(j.roteiro.design.atrasFaltou.join(', '))} (a palavra não foi dita, ou cai no começo, no fim ou junto de outro elemento). Confira se escreveu igual à fala.</p>` : ''}
         <h3>Roteiro</h3>${roteiroSimples(j.roteiro)}
-        ${j.status === 'previa_pronta' ? `<h3>Ajuste</h3><textarea id="ajuste" placeholder="Ex.: tira o trecho em que ele gagueja aos 12 s e deixa a legenda maior"></textarea>
+        ${j.status === 'previa_pronta' ? `<h3>Ajuste</h3><textarea id="ajuste" rows="7" placeholder="Um pedido por linha. Ex.: tira o trecho em que ele fala &quot;ééé, então&quot;"></textarea>
+          <div class="small mute" style="margin-top:4px">Não sabe como escrever? <a href="#" id="btnModelo">Usar o modelo</a> e trocar o que está entre [colchetes]. Copie as palavras exatas que a pessoa fala no vídeo.</div>
           <label class="small" style="display:block;margin-top:6px"><input type="checkbox" id="ajusteFicha"> Guardar na ficha da marca (vale para os próximos vídeos dela)</label>
           <div class="row" style="margin-top:10px"><button class="btn" id="btnAjuste">Pedir ajuste</button><span class="grow"></span><button class="btn acc" id="btnAprovar">Aprovar e enviar ao Drive</button></div>` : ''}
         ${j.tipo === 'reel' && ['previa_pronta', 'erro'].includes(j.status) ? `<details style="margin-top:14px"><summary class="small" style="cursor:pointer"><b>Incluir um take</b> (ex.: um take que ficou em outra pasta)</summary>
@@ -277,13 +284,21 @@ async function abrirPedido(id, recarregar) {
   $$('.respTxt').forEach((i) => (i.onkeydown = (e) => e.key === 'Enter' && responder(i.dataset.q, i.value)));
   const acao = async (fn, args, ok) => { const { error } = await sb.rpc(fn, args); toast(error ? 'Erro: ' + error.message : ok); await carregarJobs(); abrirPedido(id, true); render(true); };
   $('#btnAprovar') && ($('#btnAprovar').onclick = () => acao('aprovar_job', { p_job: id }, 'Aprovado. O arquivo final vai para o Drive.'));
+  $('#btnModelo') && ($('#btnModelo').onclick = (ev) => { ev.preventDefault(); const a = $('#ajuste');
+    a.value = (a.value.trim() ? a.value.trim() + '\n' : '') + MODELO_AJUSTE; a.focus(); a.scrollTop = 0; const k = a.value.indexOf('['); if (k >= 0) a.setSelectionRange(k, a.value.indexOf(']', k) + 1); });
   $('#btnAjuste') && ($('#btnAjuste').onclick = async () => {
     const t = $('#ajuste').value.trim(); if (!t) return toast('Descreva o ajuste');
+    if (/\[[^\]]*\]/.test(t) && /\[(começo|fim|frase|palavra)/i.test(t)) return toast('Troque o que está entre [colchetes] (ou apague a linha que não quiser)');
     if ($('#ajusteFicha')?.checked) {
       const { data: kt } = await sb.from('brand_kits').select('acabamento').eq('client_id', j.client_id).maybeSingle();
       if (kt) {
         const ac = kt.acabamento || {}, fi = ac.ficha || {};
-        const { error } = await sb.from('brand_kits').update({ acabamento: { ...ac, ficha: { ...fi, ajustes: [...(fi.ajustes || []), { data: new Date().toISOString(), texto: t, pedido: j.numero }], versao: (fi.versao || 0) + 1, atualizada_em: new Date().toISOString() } } }).eq('client_id', j.client_id);
+        // RITMO e PALAVRAS-CHAVE guardados na ficha ligam (ou desligam) o elemento da marca
+        const el = { ...(fi.elementos || {}) };
+        const lr = t.match(/^\s*ritmo\s*:(.*)$/im), la = t.match(/^\s*palavras?[\s-]*chaves?\s*:(.*)$/im);
+        if (lr) el.ritmo = !/(calm|lent|normal|sem efeito|menos)/i.test(lr[1]);
+        if (la) el.atras = !/^\s*(sem|nenhuma|tira|remove|desliga)/i.test(la[1]);
+        const { error } = await sb.from('brand_kits').update({ acabamento: { ...ac, ficha: { ...fi, elementos: el, ajustes: [...(fi.ajustes || []), { data: new Date().toISOString(), texto: t, pedido: j.numero }], versao: (fi.versao || 0) + 1, atualizada_em: new Date().toISOString() } } }).eq('client_id', j.client_id);
         if (error) toast('Ajuste não entrou na ficha: ' + error.message); else await carregarClientes();
       }
     }

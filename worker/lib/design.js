@@ -45,16 +45,32 @@ export function temposDesign(cfg) {
   return { pb: el.pb === false ? 0 : PB, cauda: el.encerramento === false ? 0 : CAUDA };
 }
 
-export async function planejarDesign({ palavras, duracao, titulo = '', broll = [], marca = '', quadros = [], ficha = null }, { claudeJson }) {
+const PEDIDO_ATRAS = `\n\nPALAVRAS ATRÁS DA PESSOA (pedido para este vídeo): escolha 2 ou 3 palavras-chave fortes da fala (substantivo, número, resultado, nome da marca) que vão passar gigantes por TRÁS da pessoa enquanto ela fala. Espaçadas (pelo menos 4 s entre elas), fora dos 3 primeiros segundos e longe do B-roll. "palavra" é o índice; "texto" é a palavra (ou duas palavras curtas) como deve aparecer. Acrescente no JSON: "atras": [{"palavra": 0, "texto": ""}]`;
+
+export async function planejarDesign({ palavras, duracao, titulo = '', broll = [], marca = '', quadros = [], ficha = null, opcoes = {} }, { claudeJson }) {
   const desligados = ficha ? Object.entries(ficha.elementos).filter(([, v]) => !v).map(([k]) => k) : [];
   const avisoDesl = desligados.length ? `\nELEMENTOS DESLIGADOS PARA ESTA MARCA (devolva vazio/null para eles): ${desligados.map((k) => ({ gancho: 'gancho', capitulos: 'capitulos', impactos: 'impactos', lista: 'lista', tarja: 'apresentacao', citacao: 'citacao', encerramento: 'encerramento' })[k]).filter(Boolean).join(', ') || 'nenhum'}` : '';
   const texto = `${ficha ? contextoFicha(ficha) + '\n' : ''}${avisoDesl}\nMARCA: ${marca}\nTÍTULO SUGERIDO: ${titulo}\nDURAÇÃO: ${duracao.toFixed(1)} s\nB-ROLL JÁ PLANEJADO (não ponha capítulo nem impacto nesses intervalos): ${broll.map((b) => `${b.inicio.toFixed(1)}-${b.fim.toFixed(1)} s`).join(', ') || 'nenhum'}\n\nFALA (índice:palavra@segundo):\n${palavras.map((w, k) => `${k}:${w.p}@${w.i.toFixed(1)}`).join(' ')}`;
-  const r = await claudeJson({ system: PROMPT, texto, imagens: quadros, max: 4000 });
-  return { plano: limparPlano(r.saida || {}, { palavras, duracao, broll, el: ficha?.elementos }), usd: r.usd || 0, tokens: r.tokens || { entrada: 0, saida: 0 } };
+  const r = await claudeJson({ system: PROMPT, texto: texto + (opcoes.atras === 'auto' ? PEDIDO_ATRAS : ''), imagens: quadros, max: 4000 });
+  return { plano: limparPlano(r.saida || {}, { palavras, duracao, broll, el: ficha?.elementos, atras: opcoes.atras || null }), usd: r.usd || 0, tokens: r.tokens || { entrada: 0, saida: 0 } };
 }
 
 // confere o que a IA devolveu: índices válidos, sem sobreposição com B-roll, abertura ou fim
-export function limparPlano(p, { palavras, duracao, broll = [], el = {} }) {
+export const ATRAS_DUR = 2.3;   // quanto tempo cada palavra passa atrás da pessoa
+const normal = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
+
+// onde a palavra (ou expressão) pedida é dita: índices das ocorrências, na ordem
+export function acharFala(palavras, alvo) {
+  const toks = String(alvo || '').split(/\s+/).map(normal).filter(Boolean);
+  if (!toks.length) return [];
+  const out = [];
+  for (let k = 0; k + toks.length <= palavras.length; k++) {
+    if (toks.every((t, j) => { const w = normal(palavras[k + j].p); return w === t || (t.length >= 4 && w.startsWith(t.slice(0, -1)) && Math.abs(w.length - t.length) <= 2); })) out.push(k);
+  }
+  return out;
+}
+
+export function limparPlano(p, { palavras, duracao, broll = [], el = {}, atras = null }) {
   const liga = (k) => el[k] !== false;
   const n = palavras.length;
   const ok = (k) => Number.isInteger(k) && k >= 0 && k < n;
@@ -75,6 +91,22 @@ export function limparPlano(p, { palavras, duracao, broll = [], el = {} }) {
   plano.rosto = Number.isFinite(topo) && Number.isFinite(base) && base > topo ? { topo: Math.max(0, Math.min(100, topo)), base: Math.max(0, Math.min(100, base)) } : null;
   const b0 = broll.length ? Math.min(...broll.map((b) => b.inicio)) : Infinity;
   plano.ganchoFim = +Math.max(1.6, Math.min(3.2, b0 - 0.15, duracao - 1)).toFixed(2);
+  // palavras atrás da pessoa (pedido do reel ou da marca): vêm antes dos outros elementos, porque foram pedidas
+  if (atras) {
+    plano.atras = []; plano.atrasFaltou = [];
+    const cabe = (t) => t >= plano.ganchoFim + 0.2 && t + ATRAS_DUR <= duracao - 1 && livre(t, t + ATRAS_DUR);
+    const pedidos = Array.isArray(atras)
+      ? atras.map((txt) => ({ txt, ks: acharFala(palavras, txt) }))
+      : (p.atras || []).filter((x) => ok(x.palavra)).map((x) => ({ txt: String(x.texto || palavras[x.palavra].p), ks: [x.palavra] }));
+    for (const { txt, ks } of pedidos.slice(0, 4)) {
+      const k = ks.find((k) => cabe(palavras[k].i - 0.15) && plano.atras.every((a) => Math.abs(a.t - (palavras[k].i - 0.15)) >= 3));
+      if (k == null) { plano.atrasFaltou.push(txt); continue; }
+      const t = palavras[k].i - 0.15;
+      plano.atras.push({ t: +t.toFixed(2), fim: +(t + ATRAS_DUR).toFixed(2), texto: corta(txt.replace(/[.,;:!?…"]+/g, ''), 3).toUpperCase() });
+      reservar(t, t + ATRAS_DUR);
+    }
+    plano.atras.sort((a, b) => a.t - b.t);
+  }
   const ap = p.apresentacao;
   if (liga('tarja') && ap && ok(ap.palavra) && String(ap.nome || '').trim()) {
     const t = Math.max(palavras[ap.palavra].i - 0.1, plano.ganchoFim + 0.15);
@@ -138,7 +170,7 @@ const dataUrl = (arq) => {
  * @param {string} [o.logo]  arquivo da logo (de preferência a versão branca)
  * @param {Array<{inicio,fim}>} [o.broll]  cartões de B-roll
  */
-export function montarHtml({ plano, palavras, duracao, cfg, logo = null, broll = [] }) {
+export function montarHtml({ plano, palavras, duracao, cfg, logo = null, broll = [], ritmo = false, cortes = [], cartao = CARTAO }) {
   const c = cfg.cores;
   const el = cfg.el || {};
   const liga = (k) => el[k] !== false;
@@ -164,6 +196,10 @@ export function montarHtml({ plano, palavras, duracao, cfg, logo = null, broll =
   const ganchoEmBaixo = Boolean(rosto && rosto.topo < 28);
   const gTopo = ganchoEmBaixo ? Math.round(Math.min(1000, Math.max(700, rosto.base * 19.2 + 50))) : 250;
   if (temGancho && ganchoEmBaixo) semLegenda.push([0, ganchoFim + 0.1]);
+  // ritmo dinâmico: lampejo nos cortes (fora do gancho, de cartões de tela cheia, B-roll e encerramento), no máximo um a cada 2,2 s
+  const ocupadoFlash = [[0, ganchoFim + 0.2], ...semLegenda, ...broll.map((b) => [b.inicio - 0.2, b.fim + 0.2])];
+  const flashes = [];
+  if (ritmo) for (const c of cortes) if (c < duracao - 0.5 && !ocupadoFlash.some(([a, b]) => c >= a && c < b) && (!flashes.length || c - flashes[flashes.length - 1] >= 2.2)) flashes.push(c);
   const linha2 = esc(g.linha2 || '').split(' ').map((w, k) => `<span class="gw" id="gw${k}"${g.destaque && w.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '') === g.destaque.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '') ? ' data-d="1"' : ''}>${w}</span>`).join(' ');
   const fundo = `background:
       radial-gradient(55% 32% at 0% 0%, ${c.verde}cc 0%, transparent 70%),
@@ -217,7 +253,7 @@ html,body{margin:0;padding:0;background:transparent;width:1080px;height:1920px;o
 .item{position:absolute;left:0;width:940px;height:104px;display:flex;align-items:center;gap:24px;padding:0 30px;border-radius:26px;background:${c.escuro}e0;border:2px solid rgba(255,255,255,.16);box-shadow:0 18px 44px rgba(0,0,0,.45);font-weight:800;font-size:46px;opacity:0}
 .item em{font-style:normal;flex:none;display:grid;place-items:center;width:62px;height:62px;border-radius:50%;background:${c.destaque};color:${c.escuro};font-weight:900;font-size:34px}
 /* moldura do B-roll */
-.moldura{left:${CARTAO.x}px;top:${CARTAO.y}px;width:${CARTAO.w}px;height:${CARTAO.h}px;border-radius:${CARTAO.raio}px;border:5px solid rgba(255,255,255,.92);box-shadow:0 40px 90px rgba(0,0,0,.6),0 0 0 1px rgba(0,0,0,.2)}
+.moldura{left:${cartao.x}px;top:${cartao.y}px;width:${cartao.w}px;height:${cartao.h}px;border-radius:${cartao.raio}px;border:5px solid rgba(255,255,255,.92);box-shadow:0 40px 90px rgba(0,0,0,.6),0 0 0 1px rgba(0,0,0,.2)}
 /* encerramento */
 #fim .elem{right:-140px;top:110px;width:640px;height:660px;transform:rotate(8deg)}
 #fim .col{position:absolute;left:90px;top:720px;width:900px;display:flex;flex-direction:column;align-items:flex-start}
@@ -249,7 +285,7 @@ ${cauda > 0 ? '' : '<!-- sem encerramento -->'}<div class="x" id="fim" style="${
   for(let i=0;i<im.data.length;i+=4){const v=(r()*255)|0;im.data[i]=im.data[i+1]=im.data[i+2]=v;im.data[i+3]=255}
   cx.putImageData(im,0,0);document.documentElement.style.setProperty('--grao','url('+cv.toDataURL()+')');
 
-  const D=${JSON.stringify({ duracao, total, pb, cartao: CARTAO, broll: cartoes.map((b) => [b.inicio, b.fim]), grupos: grupos.map((gr) => gr.map((w) => [w.k, +w.i.toFixed(3), +w.f.toFixed(3)])), sem: semLegenda, caps: (plano.capitulos || []).map((x) => x.t), imps: (plano.impactos || []).map((x) => x.t), lista: (plano.lista || []).map((x) => x.t), listaFim: plano.listaFim || 0, ganchoFim, tarja: plano.apresentacao ? plano.apresentacao.t : -1, cit: plano.citacao ? { t: plano.citacao.t, fim: plano.citacao.fim, w: plano.citacao.palavras.map((x) => x[1]) } : null })};
+  const D=${JSON.stringify({ duracao, total, pb, cartao, broll: cartoes.map((b) => [b.inicio, b.fim]), grupos: grupos.map((gr) => gr.map((w) => [w.k, +w.i.toFixed(3), +w.f.toFixed(3)])), sem: semLegenda, caps: (plano.capitulos || []).map((x) => x.t), imps: (plano.impactos || []).map((x) => x.t), lista: (plano.lista || []).map((x) => x.t), listaFim: plano.listaFim || 0, ganchoFim, ritmo, flashes, tarja: plano.apresentacao ? plano.apresentacao.t : -1, cit: plano.citacao ? { t: plano.citacao.t, fim: plano.citacao.fim, w: plano.citacao.palavras.map((x) => x[1]) } : null })};
   const cl=(x)=>Math.max(0,Math.min(1,x)), eo=(p)=>1-Math.pow(1-p,3), eio=(p)=>p<.5?4*p*p*p:1-Math.pow(-2*p+2,3)/2;
   const back=(p)=>{const c1=1.70158,c3=c1+1;return 1+c3*Math.pow(p-1,3)+c1*Math.pow(p-1,2)};
   const $=(id)=>document.getElementById(id);
@@ -267,7 +303,9 @@ ${cauda > 0 ? '' : '<!-- sem encerramento -->'}<div class="x" id="fim" style="${
   window.__seek=function(t){
     sig.length=0;
     // flash na volta da cor
-    const pf=(t-D.pb)/0.18; set($('flash'), D.pb>0&&pf>=0&&pf<1?0.32*(1-pf):0);
+    const pf=(t-D.pb)/0.18; let fl=D.pb>0&&pf>=0&&pf<1?0.32*(1-pf):0;
+    for(const c of D.flashes){const q=(t-c)/0.14; if(q>=0&&q<1) fl=Math.max(fl,0.26*Math.pow(1-q,2));}
+    set($('flash'), fl);
     // gancho
     const gf=D.ganchoFim, saiG=gf>0?cl((t-gf)/0.3):1;
     set($('gsombra'), cl(t/0.15)*(1-saiG));
@@ -287,7 +325,8 @@ ${cauda > 0 ? '' : '<!-- sem encerramento -->'}<div class="x" id="fim" style="${
       if(oculta||t<ini||t>=fim){set(el,0);gr.forEach(([w])=>set($('w'+w),0));return}
       // com o cartão de B-roll na tela, a legenda desce para baixo dele (fica sobre o fundo escurecido)
       set(el,1,dentro(t,D.broll.map(([a,b])=>[a-0.05,b]))?'translateY(300px)':'');
-      gr.forEach(([w,wi])=>{const p=cl((t-wi+0.08)/0.16); set($('w'+w),cl(p*1.4),'translateY('+(26*(1-eo(p))).toFixed(1)+'px) scale('+(0.92+0.08*eo(p)).toFixed(3)+')','filter:blur('+(7*(1-eo(p))).toFixed(1)+'px)')});
+      gr.forEach(([w,wi])=>{ if(D.ritmo){ const p=cl((t-wi+0.06)/0.12); set($('w'+w),cl(p*2),'translateY('+(18*(1-eo(p))).toFixed(1)+'px) scale('+(0.6+0.4*back(p)).toFixed(3)+')','filter:blur('+(4*(1-eo(p))).toFixed(1)+'px)'); return; }
+        const p=cl((t-wi+0.08)/0.16); set($('w'+w),cl(p*1.4),'translateY('+(26*(1-eo(p))).toFixed(1)+'px) scale('+(0.92+0.08*eo(p)).toFixed(3)+')','filter:blur('+(7*(1-eo(p))).toFixed(1)+'px)')});
     });
     // tarja de apresentação: desliza da esquerda, fica 2,6 s
     if(D.tarja>=0){const a=D.tarja, b=a+2.6, el=$('tarja'); if(t<a||t>=b) set(el,0); else { const p=eo(cl((t-a)/0.4)), s=cl((b-t)/0.3);
@@ -341,6 +380,48 @@ ${cauda > 0 ? '' : '<!-- sem encerramento -->'}<div class="x" id="fim" style="${
 })();
 </script></body></html>`;
   return { html, total, pb, cauda };
+}
+
+// Camada que fica ATRÁS da pessoa (entre o fundo e ela): o fundo escurece um pouco na cor da marca e a palavra-chave
+// passa gigante em duas faixas (uma cheia, uma só contorno, em sentidos opostos) na altura da cabeça.
+export function montarHtmlAtras({ plano, cfg, total }) {
+  const c = cfg.cores;
+  const itens = plano.atras || [];
+  const r = plano.rosto;
+  // as duas faixas cruzam a cabeça (da testa ao queixo), para a pessoa cobrir parte das letras
+  const topo = r ? r.topo * 19.2 : 330, base = r ? r.base * 19.2 : 900;
+  const y1 = Math.round(Math.max(60, Math.min(1000, topo + (base - topo) * 0.12))), y2 = y1 + 300;
+  const fonte = (peso, estilo = 'normal') => `@font-face{font-family:'M';font-weight:${peso};font-style:${estilo};src:url('file://${FONTES}montserrat-latin-${peso}-${estilo}.woff2') format('woff2')}`;
+  const faixa = (txt) => Array(6).fill(esc(txt)).join('<i>•</i>');
+  const html = `<!doctype html><html><head><meta charset="utf-8"><style>
+${fonte(900)}${fonte(900, 'italic')}
+html,body{margin:0;padding:0;background:transparent;width:1080px;height:1920px;overflow:hidden}
+#r{position:absolute;inset:0;font-family:'M',sans-serif;-webkit-font-smoothing:antialiased}
+.x{position:absolute;opacity:0;will-change:transform,opacity}
+.tinta{left:0;top:0;width:1080px;height:1920px;background:radial-gradient(80% 60% at 50% 40%, ${c.escuro}66 0%, ${c.escuro}b3 100%)}
+.f{left:-1400px;white-space:nowrap;font-weight:900;font-style:italic;font-size:300px;line-height:1;letter-spacing:-.035em}
+.f i{font-style:normal;font-size:.45em;vertical-align:.45em;margin:0 .35em;opacity:.8}
+.f1{top:${y1}px;color:${c.destaque};text-shadow:0 14px 40px rgba(0,0,0,.35)}
+.f2{top:${y2}px;color:transparent;-webkit-text-stroke:5px ${c.texto || '#fff'};opacity:.9}
+</style></head><body><div id="r">
+${itens.map((a, k) => `<div class="x tinta" id="t${k}"></div><div class="x f f1" id="a${k}">${faixa(a.texto)}</div><div class="x f f2" id="b${k}">${faixa(a.texto)}</div>`).join('\n')}
+</div><script>
+(function(){
+  const D=${JSON.stringify({ total, itens: itens.map((a) => [a.t, a.fim]) })};
+  const cl=(x)=>Math.max(0,Math.min(1,x)), eo=(p)=>1-Math.pow(1-p,3);
+  const $=(id)=>document.getElementById(id); const sig=[];
+  function set(el,o,tf){ o=Math.round(o*1000)/1000; const css=o<=0?'0':o+'|'+tf; if(el.__c!==css){el.__c=css; el.style.opacity=o; el.style.transform=o<=0?'':tf;} sig.push(css); }
+  window.__seek=function(t){ sig.length=0;
+    D.itens.forEach(([a,b],k)=>{ const dentro=t>=a&&t<b; const p=eo(cl((t-a)/0.22)), s=cl((b-t)/0.28), o=dentro?Math.min(p,s):0;
+      const v=dentro?(t-a)/(b-a):0;
+      set($('t'+k), o, 'none');
+      set($('a'+k), o, 'translateX('+(-420*v).toFixed(1)+'px) scale('+(1.12-0.12*p).toFixed(3)+')');
+      set($('b'+k), o*0.9, 'translateX('+(-700+420*v).toFixed(1)+'px) scale('+(1.12-0.12*p).toFixed(3)+')'); });
+    return sig.join('|'); };
+  Promise.all(['900 50px M','italic 900 50px M'].map((f)=>document.fonts.load(f))).then(()=>document.fonts.ready).then(()=>{window.__pronto=true});
+})();
+</script></body></html>`;
+  return { html, total };
 }
 
 // máscara do cartão (PGM em escala de cinza, cantos arredondados com antisserrilhado) para o alphamerge do ffmpeg
