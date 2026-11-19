@@ -193,7 +193,7 @@ async function carregarJobs() {
 
 function render(soMenu) {
   const pend = S.jobs.filter((j) => ['aguardando_resposta', 'previa_pronta', 'erro'].includes(j.status)).length;
-  const abas = [['pedidos', 'Pedidos', pend], ['novo', 'Novo pedido'], ['clientes', 'Clientes'], ['teste', 'Teste às cegas'], ...(S.perfil.papel === 'admin' ? [['equipe', 'Equipe']] : [])];
+  const abas = [['pedidos', 'Pedidos', pend], ['novo', 'Novo pedido'], ['clientes', 'Clientes'], ['publicacoes', 'Publicações'], ['teste', 'Teste às cegas'], ...(S.perfil.papel === 'admin' ? [['equipe', 'Equipe']] : [])];
   const menu = abas.map(([k, t, n]) => `<button data-aba="${k}" class="${S.aba === k ? 'on' : ''}">${t}${n ? `<span class="n">${n}</span>` : ''}</button>`).join('');
   if (soMenu && $('nav')) { $('nav').innerHTML = menu; ligarMenu(); return; }
   $('#app').innerHTML = `<header><span class="marca">Link<b>3</b> · Conteúdo</span><nav>${menu}</nav><span class="grow"></span>
@@ -202,7 +202,7 @@ function render(soMenu) {
   ligarMenu(); renderConteudo();
 }
 function ligarMenu() { $$('nav button').forEach((b) => (b.onclick = () => { S.aba = b.dataset.aba; render(); })); }
-function renderConteudo() { ({ pedidos: renderPedidos, novo: renderNovo, clientes: renderClientes, teste: renderTeste, equipe: renderEquipe })[S.aba](); }
+function renderConteudo() { ({ pedidos: renderPedidos, novo: renderNovo, clientes: renderClientes, publicacoes: renderPublicacoes, teste: renderTeste, equipe: renderEquipe })[S.aba](); }
 const nomeCliente = (id) => S.clientes.find((c) => c.id === id)?.nome || '—';
 
 // ================= Pedidos =================
@@ -288,7 +288,7 @@ async function abrirPedido(id, recarregar) {
     <div class="grid2">
       <div>${previa ? `<div class="previa">${previa}</div>` : `<div class="box empty">${['entregue'].includes(j.status) ? 'Entregue no Drive.' : 'A prévia aparece aqui quando o render terminar.'}</div>`}
         ${j.final_drive_id ? `<p class="small"><a href="${linkDrive(j.final_drive_id, peca)}" target="_blank" rel="noopener">${peca ? 'Abrir a pasta com as lâminas no Drive' : 'Abrir o arquivo final no Drive'}</a>${S.perfil.papel === 'admin' ? ` · <a href="#" id="btnTeste">Pôr no teste às cegas</a>` : ''}</p>` : ''}
-        ${j.tipo === 'reel' && j.final_drive_id ? `<div id="igPublicar" class="small mute" style="margin-top:10px"></div>` : ''}</div>
+        ${j.final_drive_id && j.tipo !== 'lote' ? `<div id="igPublicar" class="small mute" style="margin-top:10px"></div>` : ''}</div>
       <div>
         <h3 style="margin-top:0">Comando</h3><p style="margin:0;white-space:pre-wrap">${esc(j.comando || '—')}</p>
         <p class="small mute">Arquivo: ${j.origem_drive_id ? `<a href="${linkDrive(j.origem_drive_id)}" target="_blank" rel="noopener">${esc(j.origem_nome || 'abrir no Drive')}</a>` : '—'}</p>
@@ -535,30 +535,86 @@ async function igDoPedido(j) {
   const box = $('#igPublicar'); if (!box) return;
   const [{ data: contas, error }, { data: pubs }] = await Promise.all([
     sb.from('instagram_contas').select('id, username, client_id, ativo').eq('ativo', true),
-    sb.from('publicacoes').select('id, status, permalink, erro, created_at, conta_id').eq('job_id', j.id).order('created_at', { ascending: false }),
+    sb.from('publicacoes').select('id, status, permalink, erro, created_at, conta_id, agendada_para').eq('job_id', j.id).order('created_at', { ascending: false }),
   ]);
   if (error) { box.innerHTML = ''; return; }
-  const jaSaiu = new Set((pubs || []).filter((p) => p.status === 'publicada').map((p) => p.conta_id));
+  const jaSaiu = new Set((pubs || []).filter((p) => ['publicada', 'publicando'].includes(p.status) || (p.status === 'na_fila')).map((p) => p.conta_id));
   const doClienteTodas = (contas || []).filter((x) => x.client_id === j.client_id);
   const doCliente = doClienteTodas.filter((x) => !jaSaiu.has(x.id)); // não oferece publicar 2x na mesma conta
   const nomeConta = (cid) => '@' + ((contas || []).find((x) => x.id === cid)?.username || '?');
-  const lista = (pubs || []).map((p) => `<div style="margin:2px 0">${nomeConta(p.conta_id)} · <b>${STATUS_PUB[p.status] || p.status}</b>${p.permalink ? ` · <a href="${esc(p.permalink)}" target="_blank" rel="noopener">ver no Instagram</a>` : ''}${p.erro ? ` · <span style="color:#b91c1c">${esc(p.erro)}</span>` : ''}</div>`).join('');
-  const emAndamento = (pubs || []).some((p) => ['na_fila', 'publicando'].includes(p.status));
+  const futuro = (p) => p.status === 'na_fila' && new Date(p.agendada_para) > new Date(Date.now() + 60000);
+  const quandoPub = (p) => new Date(p.agendada_para).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+  const lista = (pubs || []).map((p) => `<div style="margin:2px 0">${nomeConta(p.conta_id)} · <b>${futuro(p) ? `agendado para ${quandoPub(p)}` : STATUS_PUB[p.status] || p.status}</b>${p.permalink ? ` · <a href="${esc(p.permalink)}" target="_blank" rel="noopener">ver no Instagram</a>` : ''}${p.erro ? ` · <span style="color:#b91c1c">${esc(p.erro)}</span>` : ''}${p.status === 'na_fila' ? ` · <a href="#" class="igCancelar" data-id="${p.id}">cancelar</a>` : ''}</div>`).join('');
+  const emAndamento = (pubs || []).some((p) => (p.status === 'na_fila' && !futuro(p)) || p.status === 'publicando');
+  const agora = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16);
   box.classList.remove('mute');
   box.innerHTML = `<b>Instagram</b>${lista ? `<div style="margin-top:4px">${lista}</div>` : ''}
     ${!doClienteTodas.length ? `<p class="mute" style="margin:4px 0">Conecte o Instagram na ficha do cliente para publicar daqui.</p>`
-      : !doCliente.length ? ''
-      : emAndamento ? '' : `<label class="f" style="margin-top:6px">Legenda do post</label><textarea id="igLegenda" rows="4">${esc(j.roteiro?.copy || '')}</textarea>
-        <div class="row" style="gap:8px;margin-top:6px"><select id="igConta">${doCliente.map((x) => `<option value="${x.id}">@${esc(x.username)}</option>`).join('')}</select><span class="grow"></span><button type="button" class="btn acc" id="igPub">Publicar agora</button></div>`}`;
+      : !doCliente.length ? '' : `<label class="f" style="margin-top:6px">Legenda do post</label><textarea id="igLegenda" rows="4">${esc(j.roteiro?.copy || '')}</textarea>
+        <div class="row" style="gap:8px;margin-top:6px;flex-wrap:wrap"><select id="igConta">${doCliente.map((x) => `<option value="${x.id}">@${esc(x.username)}</option>`).join('')}</select>
+        <label class="small" style="display:flex;align-items:center;gap:6px">Quando <input type="datetime-local" id="igQuando" min="${agora}" style="width:auto"></label>
+        <span class="grow"></span><button type="button" class="btn acc" id="igPub">Publicar agora</button></div>
+        <div class="small mute" style="margin-top:4px">Deixe "Quando" em branco para publicar agora, ou escolha dia e hora para agendar.</div>`}`;
+  $('#igQuando') && ($('#igQuando').oninput = () => { $('#igPub').textContent = $('#igQuando').value ? 'Agendar' : 'Publicar agora'; });
   $('#igPub') && ($('#igPub').onclick = async () => {
     const conta = $('#igConta').value, nome = $('#igConta').selectedOptions[0].textContent;
-    if (!confirm(`Publicar este reel agora em ${nome}? Ele vai aparecer no perfil na hora.`)) return;
+    const q = $('#igQuando').value ? new Date($('#igQuando').value) : null;
+    if (q && q < new Date()) return toast('Escolha um horário no futuro');
+    const quando = q ? q.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : null;
+    if (!confirm(q ? `Agendar este ${TIPO[j.tipo].toLowerCase()} em ${nome} para ${quando}?` : `Publicar este ${TIPO[j.tipo].toLowerCase()} agora em ${nome}? Ele vai aparecer no perfil na hora.`)) return;
     $('#igPub').disabled = true;
-    const { error } = await sb.from('publicacoes').insert({ job_id: j.id, client_id: j.client_id, conta_id: conta, legenda: $('#igLegenda').value });
-    toast(error ? 'Erro: ' + error.message : 'Na fila de publicação. Leva 1 a 3 minutos.');
+    const { error } = await sb.from('publicacoes').insert({ job_id: j.id, client_id: j.client_id, conta_id: conta, legenda: $('#igLegenda').value, ...(q ? { agendada_para: q.toISOString() } : {}) });
+    toast(error ? 'Erro: ' + error.message : q ? `Agendado para ${quando}.` : 'Na fila de publicação. Leva 1 a 3 minutos.');
     igDoPedido(j);
   });
+  $$('.igCancelar').forEach((a) => (a.onclick = async (ev) => {
+    ev.preventDefault();
+    if (!confirm('Cancelar esta publicação?')) return;
+    const { error } = await sb.from('publicacoes').update({ status: 'cancelada' }).eq('id', a.dataset.id).eq('status', 'na_fila');
+    toast(error ? 'Erro: ' + error.message : 'Publicação cancelada'); igDoPedido(j);
+  }));
   if (emAndamento) setTimeout(() => S.aberto === j.id && $('#igPublicar') && igDoPedido(j), 8000);
+}
+
+// ================= Publicações: agenda e resumo do dia =================
+async function renderPublicacoes(dia) {
+  const hoje = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  dia = dia || S.diaPub || hoje; S.diaPub = dia;
+  const ini = new Date(dia + 'T00:00:00'), fim = new Date(ini.getTime() + 86400000), amanhaFim = new Date(fim.getTime() + 86400000);
+  const desde = new Date(ini.getTime() - 13 * 86400000);
+  const [{ data: pubs, error }, { data: contas }] = await Promise.all([
+    sb.from('publicacoes').select('id, job_id, client_id, conta_id, status, agendada_para, publicada_em, permalink, erro, created_at').gte('agendada_para', desde.toISOString()).order('agendada_para', { ascending: false }).limit(500),
+    sb.from('instagram_contas').select('id, username'),
+  ]);
+  if (error) { $('#conteudo').innerHTML = `<div class="box empty">Publicações ainda não liberadas no banco (migração 007).</div>`; return; }
+  const arroba = (id) => '@' + ((contas || []).find((c) => c.id === id)?.username || '?');
+  const job = (id) => S.jobs.find((j) => j.id === id);
+  const peca = (p) => { const j = job(p.job_id); return j ? `${TIPO[j.tipo]} #${j.numero}` : 'pedido'; };
+  const hora = (d) => new Date(d).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  const dataHora = (d) => new Date(d).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+  const no = (d, a, b) => d && new Date(d) >= a && new Date(d) < b;
+  const publicadas = (pubs || []).filter((p) => p.status === 'publicada' && no(p.publicada_em || p.agendada_para, ini, fim)).reverse();
+  const erros = (pubs || []).filter((p) => p.status === 'erro' && no(p.agendada_para, ini, fim));
+  const agendadas = (pubs || []).filter((p) => p.status === 'na_fila' && new Date(p.agendada_para) >= new Date()).sort((a, b) => new Date(a.agendada_para) - new Date(b.agendada_para));
+  const amanha = agendadas.filter((p) => no(p.agendada_para, fim, amanhaFim));
+  const diaTxt = ini.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+  const linha = (p, quando) => `• ${nomeCliente(p.client_id)} · ${peca(p)} · ${arroba(p.conta_id)} · ${quando}${p.permalink ? ` · ${p.permalink}` : ''}${p.erro ? ` · erro: ${p.erro}` : ''}`;
+  const resumo = [`Resumo das publicações · ${diaTxt}`, '',
+    `Publicados (${publicadas.length}):`, ...(publicadas.length ? publicadas.map((p) => linha(p, hora(p.publicada_em || p.agendada_para))) : ['• nenhum']),
+    ...(erros.length ? ['', `Com erro (${erros.length}):`, ...erros.map((p) => linha(p, hora(p.agendada_para)))] : []),
+    '', `Agendados para o dia seguinte (${amanha.length}):`, ...(amanha.length ? amanha.map((p) => linha(p, hora(p.agendada_para))) : ['• nenhum'])].join('\n');
+  const tab = (lst, quando) => lst.length ? `<table><tr><th>Quando</th><th>Cliente</th><th>Peça</th><th>Conta</th><th>Status</th></tr>${lst.map((p) => `<tr class="click" data-job="${p.job_id}"><td>${quando(p)}</td><td>${esc(nomeCliente(p.client_id))}</td><td>${esc(peca(p))}</td><td>${esc(arroba(p.conta_id))}</td><td>${p.permalink ? `<a href="${esc(p.permalink)}" target="_blank" rel="noopener">publicado</a>` : esc(STATUS_PUB[p.status] || p.status)}${p.erro ? ` <span class="small" style="color:#b91c1c">${esc(p.erro)}</span>` : ''}</td></tr>`).join('')}</table>` : '<div class="small mute" style="padding:12px">Nada por aqui.</div>';
+  $('#conteudo').innerHTML = `<div class="row" style="margin-bottom:12px"><h2 style="margin:0">Publicações</h2><span class="grow"></span><label class="small">Dia <input type="date" id="diaPub" value="${dia}" max="${hoje}" style="width:auto"></label></div>
+    <div class="grid2">
+      <div><h3 style="margin-top:0">Resumo do dia</h3><div class="box pad"><pre id="resumoPub" style="white-space:pre-wrap;margin:0;font-family:inherit;font-size:14px">${esc(resumo)}</pre>
+        <div class="row" style="margin-top:10px"><span class="grow"></span><button class="btn sm" id="copiarResumo">Copiar para o WhatsApp</button></div></div>
+        <h3>Agendadas</h3><div class="box">${tab(agendadas, (p) => dataHora(p.agendada_para))}</div></div>
+      <div><h3 style="margin-top:0">Publicadas em ${diaTxt}</h3><div class="box">${tab(publicadas, (p) => hora(p.publicada_em || p.agendada_para))}</div>
+        ${erros.length ? `<h3>Com erro em ${diaTxt}</h3><div class="box">${tab(erros, (p) => hora(p.agendada_para))}</div>` : ''}</div>
+    </div>`;
+  $('#diaPub').onchange = (e) => renderPublicacoes(e.target.value);
+  $('#copiarResumo').onclick = () => navigator.clipboard.writeText($('#resumoPub').innerText).then(() => toast('Resumo copiado'));
+  $$('#conteudo tr.click').forEach((tr) => (tr.onclick = (ev) => { if (ev.target.closest('a')) return; if (tr.dataset.job && tr.dataset.job !== 'null') abrirPedido(tr.dataset.job); }));
 }
 
 // contas do Instagram do cliente (conectar, desligar, vincular uma conta já conectada)

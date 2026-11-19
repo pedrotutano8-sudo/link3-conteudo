@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { trocarCodigo, publicarReel } from '../lib/instagram.js';
+import { trocarCodigo, publicarReel, publicarImagens } from '../lib/instagram.js';
 
 process.env.META_APP_ID = '111'; process.env.META_APP_SECRET = 'abc';
 const resp = (obj, status = 200) => ({ ok: status < 400, status, text: async () => JSON.stringify(obj) });
@@ -66,4 +66,27 @@ test('login unificado: conta vem de me/assigned_instagram_accounts', async () =>
   };
   const r = await trocarCodigo('C', { fetchImpl: f });
   assert.deepEqual(r.contas, [{ ig_user_id: '1784', username: 'moovlar', foto: null, host: 'graph.facebook.com' }]);
+});
+
+test('carrossel: um contêiner por imagem, contêiner CAROUSEL com os filhos e publica', async () => {
+  const chamadas = [];
+  let n = 0;
+  const f = async (u, o) => {
+    const url = new URL(u); chamadas.push([o.method, url.pathname, Object.fromEntries(url.searchParams)]);
+    if (url.pathname.endsWith('/media') && o.method === 'POST') return resp({ id: url.searchParams.get('media_type') === 'CAROUSEL' ? 'car1' : `img${++n}` });
+    if (url.pathname.endsWith('/media_publish')) return resp({ id: 'pub1' });
+    if (url.searchParams.get('fields') === 'permalink') return resp({ permalink: 'https://www.instagram.com/p/abc/' });
+    return resp({ status_code: 'FINISHED' });
+  };
+  const r = await publicarImagens({ conta: { ig_user_id: '178', token: 'T' }, urls: ['https://x/1.jpg', 'https://x/2.jpg', 'https://x/3.jpg'], legenda: 'oi', fetchImpl: f, espera: async () => {} });
+  assert.deepEqual(r, { container_id: 'car1', media_id: 'pub1', permalink: 'https://www.instagram.com/p/abc/' });
+  const posts = chamadas.filter((c) => c[0] === 'POST');
+  assert.equal(posts.filter((c) => c[2].is_carousel_item === 'true').length, 3);
+  const car = posts.find((c) => c[2].media_type === 'CAROUSEL');
+  assert.equal(car[2].children, 'img1,img2,img3'); assert.equal(car[2].caption, 'oi');
+  // post de 1 imagem: contêiner direto com a legenda, sem carrossel
+  chamadas.length = 0; n = 0;
+  await publicarImagens({ conta: { ig_user_id: '178', token: 'T' }, urls: ['https://x/1.jpg'], legenda: 'só uma', fetchImpl: f, espera: async () => {} });
+  assert.ok(!chamadas.some((c) => c[2].media_type === 'CAROUSEL'));
+  assert.equal(chamadas.find((c) => c[1].endsWith('/media'))[2].caption, 'só uma');
 });

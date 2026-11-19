@@ -1,7 +1,8 @@
 // Instagram (login unificado da Meta): conecta a conta do cliente e publica o reel aprovado.
 // Conectar: o painel grava o "code" que a Meta devolveu em instagram_conexoes; aqui ele vira token
 // (com a chave secreta do app, que só existe no servidor) e as contas do Instagram autorizadas vão para instagram_contas.
-// Publicar: publicacoes na fila → baixa o vídeo final do Drive → upload retomável no Instagram → publica.
+// Publicar: publicacoes na fila (na hora agendada) → reel: baixa o vídeo do Drive → upload retomável → publica;
+// carrossel/post: lâminas do Drive → link temporário no storage → contêineres de imagem → publica.
 import fs from 'node:fs';
 import path from 'node:path';
 import { createClient } from '@supabase/supabase-js';
@@ -127,6 +128,36 @@ export async function publicarReel({ conta, arquivo, legenda, fetchImpl = fetch,
   return { container_id: c.id, media_id: p.id, permalink };
 }
 
+// publica foto única (post) ou carrossel (2 a 10 imagens) a partir de URLs públicas das imagens
+export async function publicarImagens({ conta, urls, legenda, fetchImpl = fetch, log = () => {}, espera = (ms) => new Promise((r) => setTimeout(r, ms)) }) {
+  const base = `https://${conta.host || 'graph.facebook.com'}/${V}`;
+  if (!urls.length) throw new Error('nenhuma imagem para publicar');
+  const pronto = async (id) => {
+    for (let i = 0; i < 30; i++) {
+      const s = await pedir(`${base}/${id}`, { params: { fields: 'status_code,status' }, token: conta.token, fetchImpl });
+      if (!s.status_code || s.status_code === 'FINISHED') return;
+      if (s.status_code === 'ERROR' || s.status_code === 'EXPIRED') throw new Error(`o Instagram não processou a imagem: ${s.status || s.status_code}`);
+      await espera(3000);
+    }
+    throw new Error('o Instagram demorou demais para processar as imagens');
+  };
+  let criacao;
+  if (urls.length === 1) {
+    criacao = (await pedir(`${base}/${conta.ig_user_id}/media`, { method: 'POST', params: { image_url: urls[0], caption: legenda || '' }, token: conta.token, fetchImpl })).id;
+  } else {
+    const filhos = [];
+    for (const u of urls.slice(0, 10)) filhos.push((await pedir(`${base}/${conta.ig_user_id}/media`, { method: 'POST', params: { image_url: u, is_carousel_item: true }, token: conta.token, fetchImpl })).id);
+    log(`instagram: ${filhos.length} imagens enviadas, montando o carrossel`);
+    for (const f of filhos) await pronto(f);
+    criacao = (await pedir(`${base}/${conta.ig_user_id}/media`, { method: 'POST', params: { media_type: 'CAROUSEL', children: filhos.join(','), caption: legenda || '' }, token: conta.token, fetchImpl })).id;
+  }
+  await pronto(criacao);
+  const p = await pedir(`${base}/${conta.ig_user_id}/media_publish`, { method: 'POST', params: { creation_id: criacao }, token: conta.token, fetchImpl });
+  let permalink = null;
+  try { permalink = (await pedir(`${base}/${p.id}`, { params: { fields: 'permalink' }, token: conta.token, fetchImpl })).permalink || null; } catch { /* sem link */ }
+  return { container_id: criacao, media_id: p.id, permalink };
+}
+
 // ciclo chamado pelo worker entre um pedido e outro
 export function criarInstagram({ supabaseUrl, supabaseKey, drive, workDir, log = console.log }) {
   const sb = createClient(supabaseUrl, supabaseKey, { auth: { persistSession: false } });
@@ -153,6 +184,26 @@ export function criarInstagram({ supabaseUrl, supabaseKey, drive, workDir, log =
     }
   }
 
+  // carrossel/post: as lâminas (pasta no Drive) vão para o storage com link temporário, que a Meta busca
+  async function publicarPeca(p, job, legenda) {
+    const conta = ok(await sb.from('instagram_contas').select('*').eq('id', p.conta_id).single());
+    const arquivos = (await drive.listar(job.final_drive_id)).filter((f) => /\.jpe?g$/i.test(f.name)).sort((a, b) => a.name.localeCompare(b.name, 'pt', { numeric: true }));
+    if (!arquivos.length) throw new Error('a pasta do pedido no Drive não tem as lâminas');
+    const caminhos = [], urls = [];
+    try {
+      for (const [k, f] of arquivos.slice(0, 10).entries()) {
+        const local = path.join(workDir, `pub-${p.id}-${k}.jpg`);
+        await drive.baixar(f.id, local);
+        const cam = `${job.org_id}/publicar/${p.id}-${String(k + 1).padStart(2, '0')}.jpg`;
+        ok(await sb.storage.from('previas').upload(cam, fs.readFileSync(local), { contentType: 'image/jpeg', upsert: true }));
+        fs.rmSync(local, { force: true });
+        caminhos.push(cam);
+        urls.push(ok(await sb.storage.from('previas').createSignedUrl(cam, 3600)).signedUrl);
+      }
+      return await publicarImagens({ conta, urls, legenda, log });
+    } finally { if (caminhos.length) await sb.storage.from('previas').remove(caminhos).catch(() => null); }
+  }
+
   async function publicacoes() {
     const fila = ok(await sb.from('publicacoes').select('*').eq('status', 'na_fila').lte('agendada_para', new Date().toISOString()).order('agendada_para').limit(1));
     for (const p of fila) {
@@ -172,12 +223,13 @@ export function criarInstagram({ supabaseUrl, supabaseKey, drive, workDir, log =
             continue;
           }
         }
-        const job = p.job_id ? ok(await sb.from('jobs').select('numero, final_drive_id, roteiro').eq('id', p.job_id).single()) : null;
-        if (!job?.final_drive_id) throw new Error('o pedido ainda não tem o vídeo final no Drive (aprove a prévia primeiro)');
+        const job = p.job_id ? ok(await sb.from('jobs').select('numero, tipo, org_id, final_drive_id, roteiro').eq('id', p.job_id).single()) : null;
+        if (!job?.final_drive_id) throw new Error('o pedido ainda não tem o arquivo final no Drive (aprove a prévia primeiro)');
         fs.mkdirSync(workDir, { recursive: true });
-        await drive.baixar(job.final_drive_id, arq);
         const legenda = p.legenda ?? job.roteiro?.copy ?? '';
-        const r = await publicarReel({ conta, arquivo: arq, legenda, log });
+        let r;
+        if (job.tipo === 'carrossel' || job.tipo === 'post') r = await publicarPeca(p, job, legenda);
+        else { await drive.baixar(job.final_drive_id, arq); r = await publicarReel({ conta, arquivo: arq, legenda, log }); }
         ok(await sb.from('publicacoes').update({ status: 'publicada', ...r, erro: null, publicada_em: new Date().toISOString() }).eq('id', p.id));
         log(`instagram: #${job.numero} publicado em @${conta.username} ${r.permalink || ''}`);
       } catch (e) {
