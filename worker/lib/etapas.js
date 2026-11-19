@@ -22,7 +22,7 @@ export async function planejarBase({ info, kit }) {
   return { roteiro: { versao: 'base', duracao_final: info.duracao, logo: Boolean(kit?.logo_id), formato: '1080x1920' }, custo: {} };
 }
 
-export function criarEtapas({ db, drive, workDir, planejar = planejarBase, lote = null, acabamento = null, log = console.log }) {
+export function criarEtapas({ db, drive, workDir, planejar = planejarBase, lote = null, acabamento = null, pecas = null, log = console.log }) {
   const pasta = (job) => { const d = path.join(workDir, job.id); fs.mkdirSync(d, { recursive: true }); return d; };
   const estadoArq = (job) => path.join(pasta(job), 'estado.json');
   const ler = (job) => { try { return JSON.parse(fs.readFileSync(estadoArq(job), 'utf8')); } catch { return {}; } };
@@ -211,7 +211,11 @@ export function criarEtapas({ db, drive, workDir, planejar = planejarBase, lote 
       if (!lote) throw new Error('Pedido em lote precisa do Módulo 1 ligado (chaves de IA no servidor)');
       return lote(job);
     }
-    if (job.tipo !== 'reel') throw new Error('Carrossel e post entram no Módulo 2 (a partir de 01/12)');
+    if (job.tipo === 'carrossel' || job.tipo === 'post') {
+      if (!pecas) throw new Error('Carrossel e post precisam da chave da IA no servidor (Módulo 2)');
+      return pecas.processar(job);
+    }
+    if (job.tipo !== 'reel') throw new Error(`tipo de pedido desconhecido: ${job.tipo}`);
     switch (job.status) {
       case 'na_fila': case 'planejando': return planejarERenderizar(job);
       case 'ajuste_pedido': return planejarERenderizar(job, { ajuste: await db.ultimoAjuste(job.id) });

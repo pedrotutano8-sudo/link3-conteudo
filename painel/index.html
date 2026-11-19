@@ -44,7 +44,10 @@
   .tipos input { display:none; } .tipos label:has(input:checked) { border-color:var(--ink); background:#faf9f5; font-weight:600; }
   .hist { list-style:none; margin:0; padding:0; } .hist li { padding:6px 0; border-bottom:1px dashed var(--line); font-size:13px; display:flex; gap:10px; } .hist li:last-child { border:0; }
   .pergunta { background:var(--acc-soft); border:1px solid #f3e19a; border-radius:10px; padding:12px 14px; margin-bottom:10px; }
-  .previa { background:#111; border-radius:10px; display:flex; justify-content:center; } .previa video, .previa img { max-height:60vh; max-width:100%; border-radius:10px; }
+  .previa { background:#111; border-radius:10px; display:flex; justify-content:center; }
+  .laminas { display:grid; grid-template-columns:repeat(auto-fill, minmax(140px, 1fr)); gap:8px; padding:8px; width:100%; background:#f4f2ee; }
+  .laminas a { position:relative; display:block; } .laminas img { width:100%; aspect-ratio:4/5; object-fit:cover; border-radius:6px; display:block; max-height:none; }
+  .laminas span { position:absolute; left:6px; top:6px; background:rgba(0,0,0,.6); color:#fff; font-size:11px; padding:1px 6px; border-radius:9px; } .previa video, .previa img { max-height:60vh; max-width:100%; border-radius:10px; }
   .cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; margin-bottom:16px; }
   .card { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:12px 14px; } .card .k { font-size:12px; color:var(--mute); } .card .v { font-size:22px; font-weight:650; }
   .mock { width:180px; aspect-ratio:9/16; border-radius:14px; position:relative; overflow:hidden; background:linear-gradient(160deg,#5b6170,#2b2f38); flex-shrink:0; }
@@ -122,6 +125,11 @@ const MODELO_AJUSTE = `TAKES: use só a parte em que ele fala "[começo da frase
 TIRAR: corta o trecho em que ele fala "[frase que quer tirar]".
 PALAVRAS-CHAVE: coloca as palavras "[palavra 1]", "[palavra 2]" e "[palavra 3]" passando por trás dele.
 RITMO: deixa as transições mais rápidas e dinâmicas.`;
+// modelo do Ajuste para carrossel e post (a IA muda só o que foi pedido no plano anterior)
+const MODELO_AJUSTE_PECA = `LÂMINA [número]: troca o título por "[novo título]".
+LÂMINA [número]: usa a foto "[nome do arquivo]".
+TIRAR: tira a lâmina [número].
+TEXTO: deixa os textos mais curtos e diretos.`;
 const ELEMENTOS = { gancho: 'Título de abertura (gancho)', pb: 'Abertura em preto e branco', cartoes: 'B-roll em cartão flutuante (senão, tela cheia)', capitulos: 'Cartão de capítulo', impactos: 'Palavra de impacto', lista: 'Lista animada', citacao: 'Citação em destaque', tarja: 'Tarja de nome e cargo', encerramento: 'Encerramento com logo e chamada', trilha: 'Trilha de fundo', grade: 'Cor levemente quente', ritmo: 'Ritmo dinâmico (zoom e transição rápida nos cortes)', atras: 'Palavras-chave passando atrás da pessoa' };
 const todos = (v) => Object.fromEntries(Object.keys(ELEMENTOS).map((k) => [k, v]));
 const ESTILOS = {
@@ -237,7 +245,8 @@ function roteiroSimples(r) {
   if (Array.isArray(trechos)) it.push(`<li><b>Cortes:</b> ${trechos.length} trecho(s) mantidos${r.duracao_final ? `, reel final de ${Math.round(r.duracao_final)} s` : ''}${r.duracao_bruto ? ` (bruto de ${Math.round(r.duracao_bruto)} s)` : ''}</li>`);
   if (Array.isArray(r.removido) && r.removido.length) it.push(`<li><b>Erros de gravação tirados:</b> ${r.removido.map((t) => `“${esc(t)}”`).join(', ')}</li>`);
   if (Array.isArray(r.cenas)) r.cenas.forEach((c) => it.push(`<li><b>${esc(c.tipo || 'Cena')}</b>${c.inicio != null ? ` aos ${Number(c.inicio).toFixed(1)} s` : ''}: ${esc(c.texto || c.descricao || '')}</li>`));
-  if (Array.isArray(r.laminas)) r.laminas.forEach((l, i) => it.push(`<li><b>Lâmina ${i + 1}</b> (${esc(l.layout || '')}): ${esc(l.titulo || l.texto || '')}</li>`));
+  const NOME_LAYOUT = { capa: 'capa', texto: 'texto', lista: 'lista', numero: 'número', citacao: 'citação', foto: 'foto', cta: 'chamada final' };
+  if (Array.isArray(r.laminas)) r.laminas.forEach((l, i) => it.push(`<li><b>Lâmina ${i + 1}</b> (${esc(NOME_LAYOUT[l.layout] || l.layout || '')}${l.foto != null && r.fotos?.[l.foto] ? `, foto ${esc(r.fotos[l.foto].nome)}${l.recorte ? ' recortada' : ''}` : ''}): ${esc(String(l.titulo || l.texto || '').replace(/\*/g, ''))}</li>`));
   const copy = r.copy || r.legenda;
   if (copy) it.push(`<li><b>Legenda do post:</b> <button class="btn sm" onclick="navigator.clipboard.writeText(this.nextElementSibling.innerText).then(() => toast('Legenda copiada'))">Copiar</button><div style="white-space:pre-wrap;margin-top:6px">${esc(copy)}</div></li>`);
   if (r.cta) it.push(`<li><b>CTA:</b> ${esc(r.cta)}</li>`);
@@ -262,6 +271,13 @@ async function abrirPedido(id, recarregar) {
     const { data: u } = await sb.storage.from('previas').createSignedUrl(j.previa_path, 3600);
     if (u?.signedUrl) previa = /\.(mp4|mov|webm)$/i.test(j.previa_path) ? `<video src="${u.signedUrl}" controls playsinline></video>` : `<img src="${u.signedUrl}" alt="Prévia">`;
   }
+  // carrossel e post: as lâminas uma a uma (a folha fica de reserva)
+  if (Array.isArray(j.roteiro?.previas) && j.roteiro.previas.length && ['carrossel', 'post'].includes(j.tipo)) {
+    const { data: us } = await sb.storage.from('previas').createSignedUrls(j.roteiro.previas, 3600);
+    const ok = (us || []).filter((x) => x.signedUrl);
+    if (ok.length) previa = `<div class="laminas">${ok.map((x, k) => `<a href="${x.signedUrl}" target="_blank" rel="noopener" title="Abrir a lâmina ${k + 1}"><img src="${x.signedUrl}" alt="Lâmina ${k + 1}" loading="lazy"><span>${k + 1}</span></a>`).join('')}</div>`;
+  }
+  const peca = ['carrossel', 'post'].includes(j.tipo);
   const abertas = (qs || []).filter((q) => !q.resposta);
   $('#dlgTitulo').innerHTML = `#${j.numero} · ${esc(nomeCliente(j.client_id))} · ${TIPO[j.tipo]} ${tag(j.status)}`;
   $('#dlgCorpo').innerHTML = `
@@ -271,7 +287,7 @@ async function abrirPedido(id, recarregar) {
     ${j.status === 'erro' ? `<div class="pergunta" style="background:var(--red-soft);border-color:#f5c2bd"><b>Erro:</b> ${esc(j.erro)}<div class="small mute">A equipe da Liderate já recebeu o alerta.</div></div>` : ''}
     <div class="grid2">
       <div>${previa ? `<div class="previa">${previa}</div>` : `<div class="box empty">${['entregue'].includes(j.status) ? 'Entregue no Drive.' : 'A prévia aparece aqui quando o render terminar.'}</div>`}
-        ${j.final_drive_id ? `<p class="small"><a href="${linkDrive(j.final_drive_id)}" target="_blank" rel="noopener">Abrir o arquivo final no Drive</a>${S.perfil.papel === 'admin' ? ` · <a href="#" id="btnTeste">Pôr no teste às cegas</a>` : ''}</p>` : ''}
+        ${j.final_drive_id ? `<p class="small"><a href="${linkDrive(j.final_drive_id, peca)}" target="_blank" rel="noopener">${peca ? 'Abrir a pasta com as lâminas no Drive' : 'Abrir o arquivo final no Drive'}</a>${S.perfil.papel === 'admin' ? ` · <a href="#" id="btnTeste">Pôr no teste às cegas</a>` : ''}</p>` : ''}
         ${j.tipo === 'reel' && j.final_drive_id ? `<div id="igPublicar" class="small mute" style="margin-top:10px"></div>` : ''}</div>
       <div>
         <h3 style="margin-top:0">Comando</h3><p style="margin:0;white-space:pre-wrap">${esc(j.comando || '—')}</p>
@@ -281,7 +297,7 @@ async function abrirPedido(id, recarregar) {
         ${j.roteiro?.design?.atrasFaltou?.length ? `<p class="small" style="margin:4px 0 0;color:#b45309">Não deu para colocar atrás da pessoa: ${esc(j.roteiro.design.atrasFaltou.join(', '))} (a palavra não foi dita, ou cai no começo, no fim ou junto de outro elemento). Confira se escreveu igual à fala.</p>` : ''}
         <h3>Roteiro</h3>${roteiroSimples(j.roteiro)}
         ${j.status === 'previa_pronta' ? `<h3>Ajuste</h3><textarea id="ajuste" rows="7" placeholder="Um pedido por linha. Ex.: tira o trecho em que ele fala &quot;ééé, então&quot;"></textarea>
-          <div class="small mute" style="margin-top:4px">Não sabe como escrever? <a href="#" id="btnModelo">Usar o modelo</a> e trocar o que está entre [colchetes]. Copie as palavras exatas que a pessoa fala no vídeo.</div>
+          <div class="small mute" style="margin-top:4px">Não sabe como escrever? <a href="#" id="btnModelo">Usar o modelo</a> e trocar o que está entre [colchetes].${peca ? ' As lâminas são numeradas na prévia.' : ' Copie as palavras exatas que a pessoa fala no vídeo.'}</div>
           <label class="small" style="display:block;margin-top:6px"><input type="checkbox" id="ajusteFicha"> Guardar na ficha da marca (vale para os próximos vídeos dela)</label>
           <div class="row" style="margin-top:10px"><button class="btn" id="btnAjuste">Pedir ajuste</button><span class="grow"></span><button class="btn acc" id="btnAprovar">Aprovar e enviar ao Drive</button></div>` : ''}
         ${j.tipo === 'reel' && ['previa_pronta', 'erro'].includes(j.status) ? `<details style="margin-top:14px"><summary class="small" style="cursor:pointer"><b>Incluir um take</b> (ex.: um take que ficou em outra pasta)</summary>
@@ -317,7 +333,7 @@ async function abrirPedido(id, recarregar) {
   const acao = async (fn, args, ok) => { const { error } = await sb.rpc(fn, args); toast(error ? 'Erro: ' + error.message : ok); await carregarJobs(); abrirPedido(id, true); render(true); };
   $('#btnAprovar') && ($('#btnAprovar').onclick = () => acao('aprovar_job', { p_job: id }, 'Aprovado. O arquivo final vai para o Drive.'));
   $('#btnModelo') && ($('#btnModelo').onclick = (ev) => { ev.preventDefault(); const a = $('#ajuste');
-    a.value = (a.value.trim() ? a.value.trim() + '\n' : '') + MODELO_AJUSTE; a.focus(); a.scrollTop = 0; const k = a.value.indexOf('['); if (k >= 0) a.setSelectionRange(k, a.value.indexOf(']', k) + 1); });
+    a.value = (a.value.trim() ? a.value.trim() + '\n' : '') + (peca ? MODELO_AJUSTE_PECA : MODELO_AJUSTE); a.focus(); a.scrollTop = 0; const k = a.value.indexOf('['); if (k >= 0) a.setSelectionRange(k, a.value.indexOf(']', k) + 1); });
   $('#btnAjuste') && ($('#btnAjuste').onclick = async () => {
     const t = $('#ajuste').value.trim(); if (!t) return toast('Descreva o ajuste');
     if (/\[[^\]]*\]/.test(t) && /\[(começo|fim|frase|palavra)/i.test(t)) return toast('Troque o que está entre [colchetes] (ou apague a linha que não quiser)');
@@ -355,8 +371,13 @@ function renderNovo() {
     <div id="avisoKit" class="small" style="margin-top:8px"></div>
     <div class="row" style="margin-top:14px"><span class="grow"></span><button class="btn acc">Enviar para a fila</button></div></form>`;
   const f = $('#fNovo');
-  const dicas = { lote: 'Cole o link da PASTA com os vídeos brutos e o documento de roteiros (.docx, .pdf ou Google Docs). O sistema cria 1 pedido de reel por roteiro, juntando os takes de cada um.' };
-  f.querySelectorAll('input[name=tipo]').forEach((r) => (r.onchange = () => { $('#dicaArq').textContent = dicas[f.tipo.value] || 'No Drive: botão direito no arquivo → Compartilhar → Copiar link.'; f.comando.placeholder = f.tipo.value === 'lote' ? 'Opcional: instrução para todos os reels do lote. Ex.: até 60 s, CTA para o site' : 'Ex.: reel de até 45 s, corta as pausas, gancho sobre clareamento nos 3 primeiros segundos, CTA para o WhatsApp no final'; }));
+  const dicas = { lote: 'Cole o link da PASTA com os vídeos brutos e o documento de roteiros (.docx, .pdf ou Google Docs). O sistema cria 1 pedido de reel por roteiro, juntando os takes de cada um.',
+    carrossel: 'Opcional: link de uma PASTA com as fotos (e, se quiser, um documento com o texto), de uma foto ou de um documento. Sem link, a IA escreve a partir do comando.',
+    post: 'Opcional: link de uma foto, de uma pasta com fotos ou de um documento com o texto. Sem link, a IA escreve a partir do comando.' };
+  const exemplos = { lote: 'Opcional: instrução para todos os reels do lote. Ex.: até 60 s, CTA para o site',
+    carrossel: 'Ex.: carrossel de 7 lâminas sobre como contratar mais rápido, tom direto, chamada final para o WhatsApp',
+    post: 'Ex.: post sobre os 27 anos da empresa, com a foto da equipe, chamada para o site' };
+  f.querySelectorAll('input[name=tipo]').forEach((r) => (r.onchange = () => { $('#dicaArq').textContent = dicas[f.tipo.value] || 'No Drive: botão direito no arquivo → Compartilhar → Copiar link.'; f.comando.placeholder = exemplos[f.tipo.value] || 'Ex.: reel de até 45 s, corta as pausas, gancho sobre clareamento nos 3 primeiros segundos, CTA para o WhatsApp no final'; }));
   f.cliente.onchange = () => { $('#avisoKit').innerHTML = f.cliente.value && !S.kits[f.cliente.value] ? '<span style="color:var(--amber)">Este cliente ainda não tem identidade cadastrada: a peça sai sem logo e com cores padrão.</span>' : ''; };
   f.onsubmit = async (e) => {
     e.preventDefault();
