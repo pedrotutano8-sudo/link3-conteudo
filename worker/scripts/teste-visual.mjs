@@ -10,6 +10,7 @@ import { criarDrive } from '../lib/drive.js';
 import { criarEtapas } from '../lib/etapas.js';
 import { criarAcabamento } from '../lib/acabamento.js';
 import { lerPedidoVisual, mesclarVisual } from '../lib/visual.js';
+import { instantesDeCorte } from '../lib/midia.js';
 import * as ia from '../lib/ia.js';
 
 const [n, ...linhas] = process.argv.slice(2);
@@ -33,4 +34,6 @@ const t0 = Date.now();
 await renderizarArquivo(job, roteiro, saida);
 const d = roteiro.design || {};
 console.log(`#${n}: pronto em ${((Date.now() - t0) / 1000).toFixed(0)} s → ${saida}`);
+console.log('cortes:', instantesDeCorte(roteiro.trechos).join(', '));
+console.log('B-roll:', (roteiro.broll || []).map((b) => `${b.inicio.toFixed(1)}-${b.fim.toFixed(1)}`).join(', ') || 'nenhum');
 console.log('palavras atrás:', (d.atras || []).map((a) => `${a.texto} @${a.t}s`).join(', ') || 'nenhuma', d.atrasFaltou?.length ? `| não couberam: ${d.atrasFaltou.join(', ')}` : '');

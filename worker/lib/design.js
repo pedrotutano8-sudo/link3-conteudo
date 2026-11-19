@@ -95,14 +95,23 @@ export function limparPlano(p, { palavras, duracao, broll = [], el = {}, atras =
   if (atras) {
     plano.atras = []; plano.atrasFaltou = [];
     const cabe = (t) => t >= plano.ganchoFim + 0.2 && t + ATRAS_DUR <= duracao - 1 && livre(t, t + ATRAS_DUR);
+    const limpa = (x) => String(x || '').replace(/[.,;:!?…"]+/g, '').trim();
+    // automático: o que a IA escolheu (no índice dela ou em outra vez que a palavra é dita); se sobrar espaço,
+    // completa com as palavras-chave da legenda (destaques) que cabem
     const pedidos = Array.isArray(atras)
       ? atras.map((txt) => ({ txt, ks: acharFala(palavras, txt) }))
-      : (p.atras || []).filter((x) => ok(x.palavra)).map((x) => ({ txt: String(x.texto || palavras[x.palavra].p), ks: [x.palavra] }));
-    for (const { txt, ks } of pedidos.slice(0, 4)) {
+      : [...(p.atras || []).filter((x) => ok(x.palavra)).map((x) => { const txt = limpa(x.texto) || limpa(palavras[x.palavra].p); return { txt, ks: [x.palavra, ...acharFala(palavras, txt)] }; }),
+        ...(p.destaques || []).filter(ok).map((k) => ({ txt: limpa(palavras[k].p), ks: [k, ...acharFala(palavras, palavras[k].p)], reserva: true })).filter((x) => x.txt.length >= 4)];
+    const usados = new Set();
+    for (const { txt, ks, reserva } of pedidos) {
+      if (plano.atras.length >= 3) break;
+      if (reserva && plano.atras.length >= 2) break;
+      if (usados.has(normal(txt))) continue;
       const k = ks.find((k) => cabe(palavras[k].i - 0.15) && plano.atras.every((a) => Math.abs(a.t - (palavras[k].i - 0.15)) >= 3));
-      if (k == null) { plano.atrasFaltou.push(txt); continue; }
+      if (k == null) { if (!reserva) plano.atrasFaltou.push(txt); continue; }
+      usados.add(normal(txt));
       const t = palavras[k].i - 0.15;
-      plano.atras.push({ t: +t.toFixed(2), fim: +(t + ATRAS_DUR).toFixed(2), texto: corta(txt.replace(/[.,;:!?…"]+/g, ''), 3).toUpperCase() });
+      plano.atras.push({ t: +t.toFixed(2), fim: +(t + ATRAS_DUR).toFixed(2), texto: corta(limpa(txt), 3).toUpperCase() });
       reservar(t, t + ATRAS_DUR);
     }
     plano.atras.sort((a, b) => a.t - b.t);

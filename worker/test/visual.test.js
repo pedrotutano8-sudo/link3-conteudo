@@ -56,3 +56,9 @@ test('janelas das palavras atrás: fora do gancho, sem encostar uma na outra', (
   assert.deepEqual(p.atrasFaltou, ['nada disso']);
   assert.equal(p.atras[0].texto, 'EQUIPE');
 });
+
+test('automático completa com as palavras-chave da legenda quando a IA erra o lugar', () => {
+  const p = limparPlano({ gancho: { linha1: 'a', linha2: 'b' }, atras: [{ palavra: 0, texto: 'nossa' }], destaques: [2, 6, 21] }, { palavras, duracao: palavras.at(-1).f, atras: 'auto' });
+  assert.ok(p.atras.length >= 2);
+  assert.ok(p.atras.every((a) => a.t >= p.ganchoFim + 0.2));
+});
