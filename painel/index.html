@@ -60,7 +60,7 @@
 <dialog id="dlg"><div class="topo"><strong id="dlgTitulo"></strong><span class="grow" style="flex:1"></span><button class="btn sm" onclick="fecharDlg()">Fechar</button></div><div class="corpo" id="dlgCorpo"></div></dialog>
 <div class="toast" id="toast"></div>
 
-<script src="config.js"></script>
+<script src="/config.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 const cfg = window.LINK3 || {};
@@ -88,6 +88,35 @@ const TIPO = { reel: 'Reel', carrossel: 'Carrossel', post: 'Post', lote: 'Lote p
 const ASSET = { logo: 'Logo principal', logo_branca: 'Logo branca', simbolo: 'Símbolo', fonte: 'Fonte', vinheta_abertura: 'Vinheta de abertura', vinheta_encerramento: 'Vinheta de encerramento', musica: 'Música', foto: 'Foto', manual: 'Manual de marca', referencia: 'Referência', outro: 'Outro' };
 
 // Ficha de edição: cópia de worker/lib/estilos.js (mudou lá, mudar aqui)
+// app da Meta (login unificado): ID do app e da configuração não são segredo; a chave secreta fica só no servidor
+const META = { appId: '2212705102675144', configId: '2270334556865702', versao: 'v24.0', retorno: location.origin + '/instagram/retorno' };
+const urlLoginInstagram = (clientId) => {
+  const estado = (clientId || 'sem') + '.' + Math.random().toString(36).slice(2, 10);
+  try { sessionStorage.setItem('igEstado', estado); } catch { /* sem armazenamento: confere só o formato */ }
+  const q = new URLSearchParams({ client_id: META.appId, config_id: META.configId, redirect_uri: META.retorno, response_type: 'code', override_default_response_type: 'true', state: estado });
+  return `https://www.facebook.com/${META.versao}/dialog/oauth?${q}`;
+};
+// volta do login da Meta: grava o code (o worker troca pelo token) e acompanha
+async function retornoInstagram() {
+  const q = new URLSearchParams(location.search);
+  history.replaceState({}, '', '/');
+  if (q.get('error')) return toast('Conexão do Instagram cancelada: ' + (q.get('error_description') || q.get('error')));
+  const code = q.get('code'), estado = q.get('state') || '';
+  let esperado = null; try { esperado = sessionStorage.getItem('igEstado'); sessionStorage.removeItem('igEstado'); } catch { /* */ }
+  if (!code || (esperado && esperado !== estado)) return toast('Volta do Instagram inválida. Tente conectar de novo.');
+  const clientId = /^[0-9a-f-]{36}$/.test(estado.split('.')[0]) ? estado.split('.')[0] : null;
+  const { data, error } = await sb.from('instagram_conexoes').insert({ code, client_id: clientId }).select('id').single();
+  if (error) return toast('Erro ao registrar a conexão: ' + error.message);
+  toast('Conectando o Instagram… (leva alguns segundos)');
+  for (let i = 0; i < 30; i++) {
+    await new Promise((r) => setTimeout(r, 3000));
+    const { data: c } = await sb.from('instagram_conexoes').select('status, erro, contas').eq('id', data.id).single();
+    if (c?.status === 'ok') { toast('Instagram conectado: ' + (c.contas || []).map((x) => '@' + x.username).join(', ')); if (clientId) { S.aba = 'clientes'; render(); abrirCliente(clientId); } return; }
+    if (c?.status === 'erro') return toast('O Instagram não conectou: ' + c.erro);
+  }
+  toast('A conexão está demorando. Confira em alguns minutos na ficha do cliente.');
+}
+
 // modelo do campo "Ajuste" (o worker lê RITMO e PALAVRAS-CHAVE em worker/lib/visual.js; TAKES e TIRAR vão para a IA de cortes)
 const MODELO_AJUSTE = `TAKES: use só a parte em que ele fala "[começo da frase]" até "[fim da frase]".
 TIRAR: corta o trecho em que ele fala "[frase que quer tirar]".
@@ -140,6 +169,7 @@ async function carregar() {
   if (!perfil) { $('#app').innerHTML = `<div class="box login"><h1>Sem acesso</h1><p class="mute">O e-mail ${esc(u.user.email)} ainda não foi liberado no painel. Peça ao administrador.</p><button class="btn" onclick="sb.auth.signOut()">Sair</button></div>`; return; }
   S.perfil = perfil;
   await Promise.all([carregarClientes(), carregarJobs()]);
+  if (location.pathname.startsWith('/instagram/retorno')) setTimeout(retornoInstagram, 300);
   sb.channel('pedidos').on('postgres_changes', { event: '*', schema: 'public', table: 'jobs' }, async () => { await carregarJobs(); if (S.aba === 'pedidos') renderConteudo(); if (S.aberto) abrirPedido(S.aberto, true); render(true); })
     .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'questions' }, () => S.aberto && abrirPedido(S.aberto, true)).subscribe();
   render();
@@ -241,7 +271,8 @@ async function abrirPedido(id, recarregar) {
     ${j.status === 'erro' ? `<div class="pergunta" style="background:var(--red-soft);border-color:#f5c2bd"><b>Erro:</b> ${esc(j.erro)}<div class="small mute">A equipe da Liderate já recebeu o alerta.</div></div>` : ''}
     <div class="grid2">
       <div>${previa ? `<div class="previa">${previa}</div>` : `<div class="box empty">${['entregue'].includes(j.status) ? 'Entregue no Drive.' : 'A prévia aparece aqui quando o render terminar.'}</div>`}
-        ${j.final_drive_id ? `<p class="small"><a href="${linkDrive(j.final_drive_id)}" target="_blank" rel="noopener">Abrir o arquivo final no Drive</a>${S.perfil.papel === 'admin' ? ` · <a href="#" id="btnTeste">Pôr no teste às cegas</a>` : ''}</p>` : ''}</div>
+        ${j.final_drive_id ? `<p class="small"><a href="${linkDrive(j.final_drive_id)}" target="_blank" rel="noopener">Abrir o arquivo final no Drive</a>${S.perfil.papel === 'admin' ? ` · <a href="#" id="btnTeste">Pôr no teste às cegas</a>` : ''}</p>` : ''}
+        ${j.tipo === 'reel' && j.final_drive_id ? `<div id="igPublicar" class="small mute" style="margin-top:10px"></div>` : ''}</div>
       <div>
         <h3 style="margin-top:0">Comando</h3><p style="margin:0;white-space:pre-wrap">${esc(j.comando || '—')}</p>
         <p class="small mute">Arquivo: ${j.origem_drive_id ? `<a href="${linkDrive(j.origem_drive_id)}" target="_blank" rel="noopener">${esc(j.origem_nome || 'abrir no Drive')}</a>` : '—'}</p>
@@ -265,6 +296,7 @@ async function abrirPedido(id, recarregar) {
         <p class="small mute">Custo de IA: ${usd(j.custo_ia_usd)} · ${j.tokens_entrada + j.tokens_saida} tokens · ${j.segundos_audio} s de áudio</p>
       </div>
     </div>`;
+  if ($('#igPublicar')) igDoPedido(j);
   $('#btnTake') && ($('#btnTake').onclick = async () => {
     const id = idDrive($('#takeLink').value);
     if (!id) return toast('Cole o link do take no Drive');
@@ -372,6 +404,7 @@ async function abrirCliente(id) {
     <div class="grid2"><div><label class="f">CTAs padrão (um por linha)</label><textarea name="ctas" placeholder="Chama no WhatsApp&#10;Link na bio">${esc((c.ctas || []).join('\n'))}</textarea></div>
       <div><label class="f">O que nunca fazer</label><textarea name="regras" placeholder="Nunca usar vermelho; não falar preço">${esc(c.regras || '')}</textarea></div></div>
     <label class="small" style="display:block;margin-top:10px"><input type="checkbox" name="ativo" ${c.ativo ? 'checked' : ''}> Cliente ativo</label>
+    ${id ? `<h3>Instagram</h3><div id="igContas" class="small mute">Carregando…</div>` : ''}
 
     <h3>Ficha de edição</h3>
     <p class="small mute" style="margin:0 0 8px">Como os vídeos desta marca são editados. O estilo decide o que entra; o texto livre refina. Se o texto contradisser o estilo, vale o estilo, e o aviso aparece aqui.</p>
@@ -471,7 +504,54 @@ async function abrirCliente(id) {
       toast(error ? 'Erro: ' + error.message : 'Arquivo removido'); abrirCliente(id);
     }));
   }
+  if (id) igDaFicha(id);
   if (!$('#dlg').open) $('#dlg').showModal();
+}
+
+// publicar o reel entregue no Instagram do cliente (o worker baixa do Drive e publica)
+const STATUS_PUB = { na_fila: 'na fila', publicando: 'publicando…', publicada: 'publicado', erro: 'erro', cancelada: 'cancelado' };
+async function igDoPedido(j) {
+  const box = $('#igPublicar'); if (!box) return;
+  const [{ data: contas, error }, { data: pubs }] = await Promise.all([
+    sb.from('instagram_contas').select('id, username, client_id, ativo').eq('ativo', true),
+    sb.from('publicacoes').select('id, status, permalink, erro, created_at, conta_id').eq('job_id', j.id).order('created_at', { ascending: false }),
+  ]);
+  if (error) { box.innerHTML = ''; return; }
+  const doCliente = (contas || []).filter((x) => x.client_id === j.client_id);
+  const nomeConta = (cid) => '@' + ((contas || []).find((x) => x.id === cid)?.username || '?');
+  const lista = (pubs || []).map((p) => `<div style="margin:2px 0">${nomeConta(p.conta_id)} · <b>${STATUS_PUB[p.status] || p.status}</b>${p.permalink ? ` · <a href="${esc(p.permalink)}" target="_blank" rel="noopener">ver no Instagram</a>` : ''}${p.erro ? ` · <span style="color:#b91c1c">${esc(p.erro)}</span>` : ''}</div>`).join('');
+  const emAndamento = (pubs || []).some((p) => ['na_fila', 'publicando'].includes(p.status));
+  box.classList.remove('mute');
+  box.innerHTML = `<b>Instagram</b>${lista ? `<div style="margin-top:4px">${lista}</div>` : ''}
+    ${!doCliente.length ? `<p class="mute" style="margin:4px 0">Conecte o Instagram na ficha do cliente para publicar daqui.</p>`
+      : emAndamento ? '' : `<label class="f" style="margin-top:6px">Legenda do post</label><textarea id="igLegenda" rows="4">${esc(j.roteiro?.copy || '')}</textarea>
+        <div class="row" style="gap:8px;margin-top:6px"><select id="igConta">${doCliente.map((x) => `<option value="${x.id}">@${esc(x.username)}</option>`).join('')}</select><span class="grow"></span><button type="button" class="btn acc" id="igPub">Publicar agora</button></div>`}`;
+  $('#igPub') && ($('#igPub').onclick = async () => {
+    const conta = $('#igConta').value, nome = $('#igConta').selectedOptions[0].textContent;
+    if (!confirm(`Publicar este reel agora em ${nome}? Ele vai aparecer no perfil na hora.`)) return;
+    $('#igPub').disabled = true;
+    const { error } = await sb.from('publicacoes').insert({ job_id: j.id, client_id: j.client_id, conta_id: conta, legenda: $('#igLegenda').value });
+    toast(error ? 'Erro: ' + error.message : 'Na fila de publicação. Leva 1 a 3 minutos.');
+    igDoPedido(j);
+  });
+  if (emAndamento) setTimeout(() => S.aberto === j.id && $('#igPublicar') && igDoPedido(j), 8000);
+}
+
+// contas do Instagram do cliente (conectar, desligar, vincular uma conta já conectada)
+async function igDaFicha(id) {
+  const box = $('#igContas'); if (!box) return;
+  const { data: contas, error } = await sb.from('instagram_contas').select('id, client_id, username, foto, ativo, token_expira').order('username');
+  if (error) { box.innerHTML = `<span style="color:#b45309">Instagram ainda não liberado no banco (migração 007).</span>`; return; }
+  const minhas = (contas || []).filter((x) => x.client_id === id), soltas = (contas || []).filter((x) => !x.client_id && x.ativo);
+  const vence = (x) => x.token_expira ? ` · vale até ${new Date(x.token_expira).toLocaleDateString('pt-BR')}` : '';
+  box.classList.remove('mute');
+  box.innerHTML = `${minhas.length ? minhas.map((x) => `<div class="row" style="align-items:center;gap:8px;margin:4px 0">${x.foto ? `<img src="${esc(x.foto)}" alt="" style="width:28px;height:28px;border-radius:50%">` : ''}<b>@${esc(x.username || '?')}</b><span class="mute">${x.ativo ? 'conectado' : 'desligado'}${vence(x)}</span><span class="grow"></span><button type="button" class="btn sm igAtivo" data-id="${x.id}" data-v="${x.ativo ? '0' : '1'}">${x.ativo ? 'Desligar' : 'Religar'}</button></div>`).join('') : '<p class="mute" style="margin:4px 0">Nenhuma conta conectada.</p>'}
+    ${soltas.length ? `<div class="row" style="gap:8px;margin-top:6px"><select id="igSolta">${soltas.map((x) => `<option value="${x.id}">@${esc(x.username || '?')}</option>`).join('')}</select><button type="button" class="btn sm" id="igVincular">Usar esta conta neste cliente</button></div>` : ''}
+    <div class="row" style="margin-top:8px"><button type="button" class="btn" id="igConectar">Conectar Instagram</button></div>
+    <p class="small mute" style="margin-top:6px">Abre o login da Meta: entre com o Instagram (conta profissional) do cliente e autorize. Depois disso o painel publica os reels aprovados nessa conta.</p>`;
+  $('#igConectar').onclick = () => { location.href = urlLoginInstagram(id); };
+  $$('.igAtivo').forEach((b) => (b.onclick = async () => { const { error } = await sb.from('instagram_contas').update({ ativo: b.dataset.v === '1' }).eq('id', b.dataset.id); toast(error ? 'Erro: ' + error.message : 'Feito'); igDaFicha(id); }));
+  $('#igVincular') && ($('#igVincular').onclick = async () => { const { error } = await sb.from('instagram_contas').update({ client_id: id }).eq('id', $('#igSolta').value); toast(error ? 'Erro: ' + error.message : 'Conta vinculada'); igDaFicha(id); });
 }
 
 // ================= Equipe (admin) =================

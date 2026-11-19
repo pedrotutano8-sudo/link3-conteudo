@@ -7,6 +7,7 @@ import { criarDrive } from './lib/drive.js';
 import { criarEtapas } from './lib/etapas.js';
 import { criarAcabamento } from './lib/acabamento.js';
 import * as ia from './lib/ia.js';
+import { criarInstagram, instagramAtivo } from './lib/instagram.js';
 
 const falta = conferir();
 if (falta.length) { console.error('Faltam variáveis de ambiente:', falta.join(', ')); process.exit(1); }
@@ -16,15 +17,19 @@ const drive = criarDrive({ credentials: config.googleCredentials, oauth: config.
 const acabamento = criarAcabamento({ drive, ia, workDir: config.workDir });
 const { processar } = criarEtapas({ db, drive, workDir: config.workDir, acabamento,
   ...(modulo1Ativo() ? { planejar: criarPlanejadorM1({ acabamento }), lote: criarLote({ db, drive, workDir: config.workDir }) } : {}) });
+// Instagram (conectar conta e publicar): roda entre um pedido e outro, no máximo a cada 10 s
+const instagram = criarInstagram({ supabaseUrl: config.supabaseUrl, supabaseKey: config.supabaseKey, drive, workDir: config.workDir });
+let ultimoIg = 0;
 const soltos = await db.liberarMeus(config.workerId).catch(() => []);
 if (soltos.length) console.log(`devolvidos para a fila depois do reinício: #${soltos.join(', #')}`);
 let parar = false;
 for (const s of ['SIGINT', 'SIGTERM']) process.on(s, () => { console.log('encerrando depois do pedido atual…'); parar = true; });
 
 const espera = (ms) => new Promise((r) => setTimeout(r, ms));
-console.log(`worker ${config.workerId} no ar · ${modulo1Ativo() ? 'Módulo 1 (transcrição, cortes, legenda, gancho e copy)' : 'Base (só logo)'}`);
+console.log(`worker ${config.workerId} no ar · ${modulo1Ativo() ? 'Módulo 1 (transcrição, cortes, legenda, gancho e copy)' : 'Base (só logo)'}${instagramAtivo() ? ' · Instagram ligado' : ''}`);
 while (!parar) {
   let job = null;
+  if (Date.now() - ultimoIg > 10000) { ultimoIg = Date.now(); await instagram.ciclo(); }
   try {
     job = await db.pegar(config.workerId);
     if (!job) { await espera(config.pollMs); continue; }
