@@ -83,6 +83,7 @@ const STATUS = {
   entregue: ['Entregue', 's-ok'], erro: ['Erro', 's-erro'], cancelado: ['Cancelado', 's-fila'],
 };
 const tag = (s) => `<span class="tag ${STATUS[s]?.[1] || ''}">${STATUS[s]?.[0] || s}</span>`;
+const takesDoPedido = (j) => (Array.isArray(j.origens) && j.origens.length ? j.origens : [{ id: j.origem_drive_id, nome: j.origem_nome || 'vídeo principal' }]);
 const TIPO = { reel: 'Reel', carrossel: 'Carrossel', post: 'Post', lote: 'Lote por roteiro' };
 const ASSET = { logo: 'Logo principal', logo_branca: 'Logo branca', simbolo: 'Símbolo', fonte: 'Fonte', vinheta_abertura: 'Vinheta de abertura', vinheta_encerramento: 'Vinheta de encerramento', musica: 'Música', foto: 'Foto', manual: 'Manual de marca', referencia: 'Referência', outro: 'Outro' };
 
@@ -239,17 +240,33 @@ async function abrirPedido(id, recarregar) {
       <div>
         <h3 style="margin-top:0">Comando</h3><p style="margin:0;white-space:pre-wrap">${esc(j.comando || '—')}</p>
         <p class="small mute">Arquivo: ${j.origem_drive_id ? `<a href="${linkDrive(j.origem_drive_id)}" target="_blank" rel="noopener">${esc(j.origem_nome || 'abrir no Drive')}</a>` : '—'}</p>
+        ${Array.isArray(j.origens) && j.origens.length > 1 ? `<p class="small mute" style="margin-top:-4px">Takes, na ordem: ${j.origens.map((o, k) => `<a href="${linkDrive(o.id)}" target="_blank" rel="noopener">${k + 1}. ${esc(o.nome || 'take')}</a>${o.incluido ? ' <span class="tag s-voce">incluído</span>' : ''}`).join(' · ')}</p>` : ''}
         ${j.roteiro?.ficha ? `<p class="small mute" style="margin:6px 0 0">Ficha de edição usada: <b>${esc(j.roteiro.ficha.nome)}</b>${j.roteiro.ficha.versao ? ` · versão ${j.roteiro.ficha.versao}` : ''}</p>` : ''}
         <h3>Roteiro</h3>${roteiroSimples(j.roteiro)}
         ${j.status === 'previa_pronta' ? `<h3>Ajuste</h3><textarea id="ajuste" placeholder="Ex.: tira o trecho em que ele gagueja aos 12 s e deixa a legenda maior"></textarea>
           <label class="small" style="display:block;margin-top:6px"><input type="checkbox" id="ajusteFicha"> Guardar na ficha da marca (vale para os próximos vídeos dela)</label>
           <div class="row" style="margin-top:10px"><button class="btn" id="btnAjuste">Pedir ajuste</button><span class="grow"></span><button class="btn acc" id="btnAprovar">Aprovar e enviar ao Drive</button></div>` : ''}
+        ${j.tipo === 'reel' && ['previa_pronta', 'erro'].includes(j.status) ? `<details style="margin-top:14px"><summary class="small" style="cursor:pointer"><b>Incluir um take</b> (ex.: um take que ficou em outra pasta)</summary>
+          <label class="f">Link do take no Drive</label><input id="takeLink" placeholder="https://drive.google.com/file/d/...">
+          <label class="f">Onde ele entra</label><select id="takePos">${takesDoPedido(j).map((t, k) => `<option value="${k + 1}" ${k === takesDoPedido(j).length - 1 ? 'selected' : ''}>Depois de: ${esc(t.nome || 'take ' + (k + 1))}</option>`).join('')}<option value="0">No começo, antes de todos</option></select>
+          <label class="f">O que esse take traz (opcional)</label><input id="takeObs" placeholder="Ex.: a frase sobre o tempo de contratação">
+          <p class="small mute" style="margin:6px 0 0">O reel é refeito do zero com o take na posição escolhida (leva alguns minutos). A prévia atual fica no histórico.</p>
+          <div class="row" style="margin-top:8px"><span class="grow"></span><button class="btn" id="btnTake">Incluir take e refazer</button></div></details>` : ''}
         <div class="row" style="margin-top:10px">${j.status === 'erro' ? '<button class="btn" id="btnReenviar">Tentar de novo</button>' : ''}
           ${!['entregue', 'cancelado', 'entregando'].includes(j.status) ? '<button class="btn sm red" id="btnCancelar">Cancelar pedido</button>' : ''}</div>
         <h3>Histórico</h3><ul class="hist">${(ev || []).map((e) => `<li><span class="mute small" style="width:92px;flex-shrink:0">${quando(e.criado_em)}</span><span>${STATUS[e.status]?.[0] || e.status}${e.mensagem ? ` · <span class="mute">${esc(e.mensagem)}</span>` : ''}</span></li>`).join('')}</ul>
         <p class="small mute">Custo de IA: ${usd(j.custo_ia_usd)} · ${j.tokens_entrada + j.tokens_saida} tokens · ${j.segundos_audio} s de áudio</p>
       </div>
     </div>`;
+  $('#btnTake') && ($('#btnTake').onclick = async () => {
+    const id = idDrive($('#takeLink').value);
+    if (!id) return toast('Cole o link do take no Drive');
+    const b = $('#btnTake'); b.disabled = true;
+    const { error } = await sb.rpc('adicionar_take', { p_job: j.id, p_drive_id: id, p_nome: null, p_depois: Number($('#takePos').value), p_obs: $('#takeObs').value.trim() || null });
+    b.disabled = false;
+    toast(error ? 'Erro: ' + error.message : 'Take incluído. O reel está sendo refeito.');
+    if (!error) abrirPedido(j.id, true);
+  });
   $('#btnTeste') && ($('#btnTeste').onclick = async (e) => {
     e.preventDefault();
     const { error } = await sb.from('teste_reels').insert({ drive_id: j.final_drive_id, origem: 'sistema', client_id: j.client_id, job_id: j.id, rodada: S.rodada || '1' });

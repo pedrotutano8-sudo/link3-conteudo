@@ -27,7 +27,13 @@ export function criarEtapas({ db, drive, workDir, planejar = planejarBase, lote 
 
   async function garantirBruto(job) {
     const e = ler(job);
-    if (e.bruto && fs.existsSync(e.bruto)) return e;
+    // a chave muda quando um take é incluído no pedido: aí o bruto é baixado e juntado de novo
+    const chave = Array.isArray(job.origens) && job.origens.length > 1 ? job.origens.map((o) => o.id).join(',') : job.origem_drive_id;
+    // estado antigo (sem chave): o bruto foi feito só com os takes originais, sem os incluídos depois
+    const originais = (job.origens || []).filter((o) => !o.incluido);
+    const antiga = e.chave || (originais.length > 1 ? originais.map((o) => o.id).join(',') : (originais[0]?.id || job.origem_drive_id));
+    if (e.bruto && fs.existsSync(e.bruto) && antiga === chave) return e;
+    if (e.bruto) fs.rmSync(e.bruto, { force: true });
     // reel com vários takes (veio de um lote): baixa todos e junta na ordem
     if (Array.isArray(job.origens) && job.origens.length > 1) {
       await db.atualizar(job.id, 'baixando');
@@ -43,7 +49,7 @@ export function criarEtapas({ db, drive, workDir, planejar = planejarBase, lote 
       locais.forEach((l) => fs.rmSync(l, { force: true }));
       await db.atualizar(job.id, 'preparando', {}, `Baixados e juntados ${locais.length} takes`);
       const info = await medir(bruto);
-      gravar(job, { bruto, nome: job.origem_nome || 'roteiro', info });
+      gravar(job, { bruto, nome: job.origem_nome || 'roteiro', info, chave });
       return ler(job);
     }
     if (!job.origem_drive_id) throw new Error('Pedido sem arquivo do Drive');
@@ -55,7 +61,7 @@ export function criarEtapas({ db, drive, workDir, planejar = planejarBase, lote 
     await db.atualizar(job.id, 'preparando', {}, `Baixado: ${meta.name}`);
     const info = await medir(bruto);
     if (!info.largura) throw new Error('O arquivo não tem vídeo');
-    gravar(job, { bruto, nome: meta.name, info });
+    gravar(job, { bruto, nome: meta.name, info, chave });
     return ler(job);
   }
 
