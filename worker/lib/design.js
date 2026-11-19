@@ -51,7 +51,15 @@ export async function planejarDesign({ palavras, duracao, titulo = '', broll = [
   const desligados = ficha ? Object.entries(ficha.elementos).filter(([, v]) => !v).map(([k]) => k) : [];
   const avisoDesl = desligados.length ? `\nELEMENTOS DESLIGADOS PARA ESTA MARCA (devolva vazio/null para eles): ${desligados.map((k) => ({ gancho: 'gancho', capitulos: 'capitulos', impactos: 'impactos', lista: 'lista', tarja: 'apresentacao', citacao: 'citacao', encerramento: 'encerramento' })[k]).filter(Boolean).join(', ') || 'nenhum'}` : '';
   const texto = `${ficha ? contextoFicha(ficha) + '\n' : ''}${avisoDesl}\nMARCA: ${marca}\nTÍTULO SUGERIDO: ${titulo}\nDURAÇÃO: ${duracao.toFixed(1)} s\nB-ROLL JÁ PLANEJADO (não ponha capítulo nem impacto nesses intervalos): ${broll.map((b) => `${b.inicio.toFixed(1)}-${b.fim.toFixed(1)} s`).join(', ') || 'nenhum'}\n\nFALA (índice:palavra@segundo):\n${palavras.map((w, k) => `${k}:${w.p}@${w.i.toFixed(1)}`).join(' ')}`;
-  const r = await claudeJson({ system: PROMPT, texto: texto + (opcoes.atras === 'auto' ? PEDIDO_ATRAS : ''), imagens: quadros, max: 4000 });
+  // espaços sem B-roll (a palavra atrás precisa de 1,5 s livres): a IA escolhe palavras ditas dentro deles
+  let livres = '';
+  if (opcoes.atras === 'auto') {
+    const occ = broll.map((b) => [b.inicio - 0.6, b.fim + 0.6]).sort((a, b) => a[0] - b[0]);
+    const jan = []; let ini = 3.4;
+    for (const [a, b] of [...occ, [duracao - 1, Infinity]]) { if (a - ini >= 1.5) jan.push(`${ini.toFixed(1)}-${(a - 1.2).toFixed(1)} s`); ini = Math.max(ini, b); }
+    livres = `\nESPAÇOS LIVRES PARA AS PALAVRAS ATRÁS (a palavra precisa ser DITA dentro de um destes intervalos): ${jan.join(', ') || 'nenhum'}`;
+  }
+  const r = await claudeJson({ system: PROMPT, texto: texto + (opcoes.atras === 'auto' ? PEDIDO_ATRAS + livres : ''), imagens: quadros, max: 4000 });
   return { plano: limparPlano(r.saida || {}, { palavras, duracao, broll, el: ficha?.elementos, atras: opcoes.atras || null }), usd: r.usd || 0, tokens: r.tokens || { entrada: 0, saida: 0 } };
 }
 
@@ -100,7 +108,8 @@ export function limparPlano(p, { palavras, duracao, broll = [], el = {}, atras =
       const prox = Math.min(duracao - 1, ...ocupado.filter(([x]) => x > t).map(([x]) => x));
       return Math.min(ATRAS_DUR, prox - t);
     };
-    const cabe = (t) => folga(t) >= 1.5;
+    // a palavra pode entrar um pouco antes de ser dita (até 0,8 s) ou logo depois (até 0,4 s), para achar espaço livre
+    const inicio = (wi) => { for (const dt of [0.15, 0.3, 0.45, 0.6, 0.8, 0, -0.2, -0.4]) { const t = wi - dt; if (folga(t) >= 1.5) return t; } return null; };
     const limpa = (x) => String(x || '').replace(/[.,;:!?…"]+/g, '').trim();
     // automático: o que a IA escolheu (no índice dela ou em outra vez que a palavra é dita); se sobrar espaço,
     // completa com as palavras-chave da legenda (destaques) que cabem
@@ -113,10 +122,10 @@ export function limparPlano(p, { palavras, duracao, broll = [], el = {}, atras =
       if (plano.atras.length >= 3) break;
       if (reserva && plano.atras.length >= 2) break;
       if (usados.has(normal(txt))) continue;
-      const k = ks.find((k) => cabe(palavras[k].i - 0.15) && plano.atras.every((a) => Math.abs(a.t - (palavras[k].i - 0.15)) >= 3));
+      const k = ks.find((k) => { const t = inicio(palavras[k].i); return t != null && plano.atras.every((a) => Math.abs(a.t - t) >= 3); });
       if (k == null) { if (!reserva) plano.atrasFaltou.push(txt); continue; }
       usados.add(normal(txt));
-      const t = palavras[k].i - 0.15, d = folga(t);
+      const t = inicio(palavras[k].i), d = folga(t);
       plano.atras.push({ t: +t.toFixed(2), fim: +(t + d).toFixed(2), texto: corta(limpa(txt), 3).toUpperCase() });
       reservar(t, t + d);
     }
