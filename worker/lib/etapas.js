@@ -219,5 +219,12 @@ export function criarEtapas({ db, drive, workDir, planejar = planejarBase, lote 
       default: throw new Error(`status inesperado na fila: ${job.status}`);
     }
   }
-  return { processar, refazerPrevia };
+  // renderiza a prévia de um roteiro num arquivo, sem mexer no pedido (testes de visual: scripts/teste-visual.mjs)
+  async function renderizarArquivo(job, roteiro, saida) {
+    const e = await garantirBruto(job);
+    const kit = await db.kit(job.client_id);
+    await renderizar(job, e, roteiro, kit, saida, { previa: true });
+    return { saida, roteiro };
+  }
+  return { processar, refazerPrevia, renderizarArquivo };
 }
