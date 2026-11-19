@@ -53,10 +53,33 @@ export async function trocarCodigo(code, { fetchImpl = fetch } = {}) {
     if (!expira && d.data?.expires_at) expira = d.data.expires_at * 1000;
   } catch (e) { diag.debug_erro = e.message.slice(0, 160); }
   const contas = [];
+  // login unificado (token de usuário do sistema da empresa do cliente): as contas que o cliente compartilhou
+  try {
+    const a = await pedir(`https://graph.facebook.com/${V}/me/assigned_instagram_accounts`, { params: { fields: 'id,username,profile_picture_url', limit: 100 }, token, fetchImpl });
+    diag.atribuidas = (a.data || []).length;
+    for (const c of a.data || []) if (c?.id) contas.push({ ig_user_id: String(c.id), username: c.username, foto: c.profile_picture_url || null, host: 'graph.facebook.com' });
+  } catch (e) { diag.atribuidas_erro = e.message.slice(0, 160); }
   for (const id of ids) {
+    if (contas.some((x) => x.ig_user_id === id)) continue;
     try { const c = await pedir(`https://graph.facebook.com/${V}/${id}`, { params: { fields: 'id,username,profile_picture_url' }, token, fetchImpl }); contas.push({ ig_user_id: c.id, username: c.username, foto: c.profile_picture_url || null, host: 'graph.facebook.com' }); } catch (e) { diag['alvo_' + id] = e.message.slice(0, 160); }
   }
-  // contas do Instagram de empresas que a pessoa gerencia (login por empresa/usuário do sistema)
+  // token de usuário do sistema da empresa do cliente (login por empresa): as contas do Instagram são ativos da empresa
+  if (!contas.length) {
+    try {
+      const me = await pedir(`https://graph.facebook.com/${V}/me`, { params: { fields: 'id,client_business_id' }, token, fetchImpl });
+      diag.empresa_cliente = me.client_business_id ? 'sim' : 'não';
+      if (me.client_business_id) {
+        for (const edge of ['owned_instagram_accounts', 'instagram_accounts', 'client_instagram_assets']) {
+          try {
+            const r = await pedir(`https://graph.facebook.com/${V}/${me.client_business_id}/${edge}`, { params: { fields: 'id,username,profile_picture_url', limit: 100 }, token, fetchImpl });
+            for (const c of r.data || []) if (c?.id && !contas.some((x) => x.ig_user_id === c.id)) contas.push({ ig_user_id: c.id, username: c.username, foto: c.profile_picture_url || null, host: 'graph.facebook.com' });
+            diag[edge] = (r.data || []).length;
+          } catch (e) { diag[edge + '_erro'] = e.message.slice(0, 120); }
+        }
+      }
+    } catch (e) { diag.empresa_cliente_erro = e.message.slice(0, 160); }
+  }
+  // contas do Instagram de empresas que a pessoa gerencia (login com token de usuário)
   if (!contas.length) {
     try {
       const b = await pedir(`https://graph.facebook.com/${V}/me/businesses`, { params: { fields: 'id,name,owned_instagram_accounts{id,username,profile_picture_url},instagram_accounts{id,username,profile_picture_url}', limit: 50 }, token, fetchImpl });

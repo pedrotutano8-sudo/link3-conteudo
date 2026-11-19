@@ -15,6 +15,7 @@ test('troca o code pelo token e acha as contas pelos alvos da permissão', async
     if (url.pathname.endsWith('/oauth/access_token')) return resp({ access_token: 'TOK' });
     if (url.pathname.endsWith('/debug_token')) return resp({ data: { granular_scopes: [{ scope: 'instagram_basic', target_ids: ['178'] }, { scope: 'pages_show_list', target_ids: ['999'] }] } });
     if (url.pathname.endsWith('/178')) return resp({ id: '178', username: 'moovlar', profile_picture_url: 'x.jpg' });
+    if (url.pathname.endsWith('/me/assigned_instagram_accounts')) return resp({ data: [] });
     return resp({ error: { message: 'inesperado' } }, 400);
   };
   const r = await trocarCodigo('CODE', { fetchImpl: f });
@@ -53,4 +54,16 @@ test('publica reel: contêiner retomável, upload, espera, publica e pega o link
   const r = await publicarReel({ conta: { ig_user_id: '178', token: 'TOK' }, arquivo: arq, legenda: 'oi', fetchImpl: f, espera: async () => {} });
   assert.deepEqual(passos, ['container REELS resumable', 'upload 1234 OAuth TOK', 'publish C1']);
   assert.deepEqual(r, { container_id: 'C1', media_id: 'M9', permalink: 'https://instagram.com/reel/abc' });
+});
+
+test('login unificado: conta vem de me/assigned_instagram_accounts', async () => {
+  const f = async (u) => {
+    const p = new URL(u).pathname;
+    if (p.endsWith('/oauth/access_token')) return resp({ access_token: 'EAAf' });
+    if (p.endsWith('/debug_token')) return resp({ data: { type: 'SYSTEM_USER', granular_scopes: [{ scope: 'instagram_basic' }] } });
+    if (p.endsWith('/me/assigned_instagram_accounts')) return resp({ data: [{ id: '1784', username: 'moovlar' }] });
+    return resp({ error: { message: 'x' } }, 400);
+  };
+  const r = await trocarCodigo('C', { fetchImpl: f });
+  assert.deepEqual(r.contas, [{ ig_user_id: '1784', username: 'moovlar', foto: null, host: 'graph.facebook.com' }]);
 });
