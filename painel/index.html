@@ -193,7 +193,7 @@ async function carregarJobs() {
 
 function render(soMenu) {
   const pend = S.jobs.filter((j) => ['aguardando_resposta', 'previa_pronta', 'erro'].includes(j.status)).length;
-  const abas = [['pedidos', 'Pedidos', pend], ['novo', 'Novo pedido'], ['clientes', 'Clientes'], ['publicacoes', 'Publicações'], ['teste', 'Teste às cegas'], ...(S.perfil.papel === 'admin' ? [['equipe', 'Equipe']] : [])];
+  const abas = [['pedidos', 'Pedidos', pend], ['novo', 'Novo pedido'], ['clientes', 'Clientes'], ['publicacoes', 'Publicações'], ['relatorios', 'Relatórios'], ['teste', 'Teste às cegas'], ...(S.perfil.papel === 'admin' ? [['equipe', 'Equipe']] : [])];
   const menu = abas.map(([k, t, n]) => `<button data-aba="${k}" class="${S.aba === k ? 'on' : ''}">${t}${n ? `<span class="n">${n}</span>` : ''}</button>`).join('');
   if (soMenu && $('nav')) { $('nav').innerHTML = menu; ligarMenu(); return; }
   $('#app').innerHTML = `<header><span class="marca">Link<b>3</b> · Conteúdo</span><nav>${menu}</nav><span class="grow"></span>
@@ -202,7 +202,7 @@ function render(soMenu) {
   ligarMenu(); renderConteudo();
 }
 function ligarMenu() { $$('nav button').forEach((b) => (b.onclick = () => { S.aba = b.dataset.aba; render(); })); }
-function renderConteudo() { ({ pedidos: renderPedidos, novo: renderNovo, clientes: renderClientes, publicacoes: renderPublicacoes, teste: renderTeste, equipe: renderEquipe })[S.aba](); }
+function renderConteudo() { ({ pedidos: renderPedidos, novo: renderNovo, clientes: renderClientes, publicacoes: renderPublicacoes, relatorios: renderRelatorios, teste: renderTeste, equipe: renderEquipe })[S.aba](); }
 const nomeCliente = (id) => S.clientes.find((c) => c.id === id)?.nome || '—';
 
 // ================= Pedidos =================
@@ -576,6 +576,65 @@ async function igDoPedido(j) {
   if (emAndamento) setTimeout(() => S.aberto === j.id && $('#igPublicar') && igDoPedido(j), 8000);
 }
 
+const fmt = (n) => n == null ? '—' : Number(n).toLocaleString('pt-BR');
+// desempenho de um post (S10): o worker atualiza a cada 6 h
+function textoMetricas(p) {
+  const m = p.metricas;
+  if (!m) return p.metricas_erro ? `<span class="mute">${esc(p.metricas_erro)}</span>` : '<span class="mute">aguardando a 1ª leitura</span>';
+  const partes = [m.alcance != null && `alcance ${fmt(m.alcance)}`, m.views != null && `${fmt(m.views)} views`, `${fmt(m.curtidas || 0)} curtidas`, `${fmt(m.comentarios || 0)} coment.`, m.salvos != null && `${fmt(m.salvos)} salvos`, m.compartilhamentos != null && `${fmt(m.compartilhamentos)} compart.`].filter(Boolean);
+  return partes.join(' · ') + (m.parcial ? ' <span class="mute">(parcial)</span>' : '');
+}
+
+// ================= Relatórios de performance (uso interno) =================
+const ROTULO_REL = { pedido: 'na fila', gerando: 'gerando…', pronto: 'pronto', erro: 'erro' };
+async function renderRelatorios() {
+  const { data: rels, error } = await sb.from('relatorios').select('id, client_id, de, ate, status, erro, created_at').order('created_at', { ascending: false }).limit(30);
+  if (error) { $('#conteudo').innerHTML = `<div class="box empty">Relatórios ainda não liberados no banco (migração 008).</div>`; return; }
+  const hoje = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  const menos = (d) => new Date(Date.now() - d * 86400000 - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  $('#conteudo').innerHTML = `<div class="row" style="margin-bottom:12px"><h2 style="margin:0">Relatórios de performance</h2><span class="grow"></span><span class="small mute">Uso interno · só posts publicados pelo painel</span></div>
+    <form id="fRel" class="box pad" style="margin-bottom:16px"><div class="grid3">
+      <div><label class="f">Cliente</label><select name="cliente"><option value="">Todos os clientes</option>${S.clientes.filter((c) => c.ativo).map((c) => `<option value="${c.id}">${esc(c.nome)}</option>`).join('')}</select></div>
+      <div><label class="f">De</label><input type="date" name="de" value="${menos(6)}" max="${hoje}"></div>
+      <div><label class="f">Até</label><input type="date" name="ate" value="${hoje}" max="${hoje}"></div></div>
+      <div class="row" style="margin-top:10px"><span class="small mute">A IA lê os números do período e sugere o que repetir e o que testar. Leva 1 a 2 minutos.</span><span class="grow"></span><button class="btn pri">Gerar relatório</button></div></form>
+    <div class="box">${(rels || []).length ? `<table><tr><th>Pedido em</th><th>Cliente</th><th>Período</th><th>Status</th></tr>${rels.map((r) => `<tr class="click" data-id="${r.id}"><td>${quando(r.created_at)}</td><td>${esc(r.client_id ? nomeCliente(r.client_id) : 'Todos')}</td><td>${new Date(r.de + 'T12:00').toLocaleDateString('pt-BR')} a ${new Date(r.ate + 'T12:00').toLocaleDateString('pt-BR')}</td><td>${esc(ROTULO_REL[r.status] || r.status)}${r.erro ? ` <span class="small" style="color:#b91c1c">${esc(r.erro)}</span>` : ''}</td></tr>`).join('')}</table>` : '<div class="empty">Nenhum relatório ainda.</div>'}</div>`;
+  $('#fRel').onsubmit = async (e) => {
+    e.preventDefault(); const f = e.target;
+    if (f.de.value > f.ate.value) return toast('A data inicial é depois da final');
+    const { error } = await sb.from('relatorios').insert({ client_id: f.cliente.value || null, de: f.de.value, ate: f.ate.value });
+    toast(error ? 'Erro: ' + error.message : 'Relatório na fila'); renderRelatorios();
+  };
+  $$('#conteudo tr.click').forEach((tr) => (tr.onclick = () => abrirRelatorio(tr.dataset.id)));
+  clearTimeout(renderRelatorios.t);
+  if ((rels || []).some((r) => ['pedido', 'gerando'].includes(r.status))) renderRelatorios.t = setTimeout(() => S.aba === 'relatorios' && renderRelatorios(), 6000);
+}
+
+async function abrirRelatorio(id) {
+  const { data: r } = await sb.from('relatorios').select('*').eq('id', id).single();
+  if (!r) return;
+  const d = r.dados || {}, a = r.analise || {};
+  const nomeTipo = (t) => TIPO[t] || t;
+  const lista = (titulo, xs) => xs?.length ? `<h3>${titulo}</h3><ul style="margin:0;padding-left:20px">${xs.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : '';
+  const itens = [...(d.itens || [])].sort((x, y) => (y.m?.alcance ?? y.interacoes) - (x.m?.alcance ?? x.interacoes));
+  const periodo = `${new Date(r.de + 'T12:00').toLocaleDateString('pt-BR')} a ${new Date(r.ate + 'T12:00').toLocaleDateString('pt-BR')}`;
+  $('#dlgTitulo').textContent = `Relatório · ${r.client_id ? nomeCliente(r.client_id) : 'Todos os clientes'}`;
+  $('#dlgCorpo').innerHTML = `<p class="small mute" style="margin-top:0">${periodo} · ${esc(ROTULO_REL[r.status] || r.status)}${d.parcial ? ' · métricas parciais (sem a permissão de métricas da Meta, só curtidas e comentários)' : ''}</p>
+    ${r.status !== 'pronto' ? `<div class="empty">${r.status === 'erro' ? esc(r.erro || 'erro') : 'Ainda gerando. Volte em 1 minuto.'}</div>` : `
+    <div class="cards"><div class="card"><div class="k">Posts</div><div class="v">${fmt(d.posts)}</div></div>
+      <div class="card"><div class="k">Alcance total</div><div class="v">${fmt(d.totais?.alcance)}</div></div>
+      <div class="card"><div class="k">Alcance médio</div><div class="v">${fmt(d.alcance_medio)}</div></div>
+      <div class="card"><div class="k">Interação sobre alcance</div><div class="v">${d.taxa_media == null ? '—' : String(d.taxa_media).replace('.', ',') + '%'}</div></div></div>
+    ${a.resumo ? `<div class="box pad" style="margin-bottom:12px"><b>Resumo.</b> ${esc(a.resumo)}</div>` : ''}
+    <div class="grid2"><div>${lista('O que funcionou', a.funcionou)}${lista('O que não funcionou', a.nao_funcionou)}</div><div>${lista('Sugestões', a.sugestoes)}${a.proximo_teste ? `<h3>Teste da próxima semana</h3><p>${esc(a.proximo_teste)}</p>` : ''}</div></div>
+    ${Object.keys(d.por_tipo || {}).length ? `<h3>Por formato</h3><div class="box"><table><tr><th>Formato</th><th>Posts</th><th>Alcance médio</th><th>Views médias</th><th>Interações médias</th></tr>${Object.entries(d.por_tipo).map(([t, v]) => `<tr><td>${esc(nomeTipo(t))}</td><td>${v.posts}</td><td>${fmt(v.alcance_medio)}</td><td>${fmt(v.views_medio)}</td><td>${fmt(v.interacoes_medias)}</td></tr>`).join('')}</table></div>` : ''}
+    ${itens.length ? `<h3>Posts do período</h3><div class="box"><table><tr><th>Post</th><th>Quando</th><th>Alcance</th><th>Views</th><th>Interações</th><th>Taxa</th></tr>${itens.map((x) => `<tr><td>${esc(nomeTipo(x.tipo))}${x.numero ? ` #${x.numero}` : ''} · ${x.permalink ? `<a href="${esc(x.permalink)}" target="_blank" rel="noopener">${esc(x.titulo || 'ver')}</a>` : esc(x.titulo)}</td><td class="small">${esc(x.dia)} ${x.hora}h</td><td>${fmt(x.m?.alcance)}</td><td>${fmt(x.m?.views)}</td><td>${fmt(x.interacoes)}</td><td>${x.taxa == null ? '—' : String(x.taxa).replace('.', ',') + '%'}</td></tr>`).join('')}</table></div>` : ''}
+    <div class="row" style="margin-top:12px"><span class="small mute">Custo da IA: ${usd(r.custo_ia_usd)}</span><span class="grow"></span><button class="btn sm" id="copiarRel">Copiar texto</button><button class="btn sm" id="apagarRel">Apagar</button></div>`}`;
+  $('#copiarRel') && ($('#copiarRel').onclick = () => navigator.clipboard.writeText([`Relatório ${r.client_id ? nomeCliente(r.client_id) : 'todos os clientes'} · ${periodo}`, a.resumo, a.funcionou?.length && 'O que funcionou:\n- ' + a.funcionou.join('\n- '), a.nao_funcionou?.length && 'O que não funcionou:\n- ' + a.nao_funcionou.join('\n- '), a.sugestoes?.length && 'Sugestões:\n- ' + a.sugestoes.join('\n- '), a.proximo_teste && 'Teste da próxima semana: ' + a.proximo_teste].filter(Boolean).join('\n\n')).then(() => toast('Texto copiado')));
+  $('#apagarRel') && ($('#apagarRel').onclick = async () => { if (!confirm('Apagar este relatório?')) return; const { error } = await sb.from('relatorios').delete().eq('id', r.id); toast(error ? 'Erro: ' + error.message : 'Relatório apagado'); fecharDlg(); renderRelatorios(); });
+  if (!$('#dlg').open) $('#dlg').showModal();
+}
+
 // ================= Publicações: agenda e resumo do dia =================
 async function renderPublicacoes(dia) {
   const hoje = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
@@ -583,7 +642,7 @@ async function renderPublicacoes(dia) {
   const ini = new Date(dia + 'T00:00:00'), fim = new Date(ini.getTime() + 86400000), amanhaFim = new Date(fim.getTime() + 86400000);
   const desde = new Date(ini.getTime() - 13 * 86400000);
   const [{ data: pubs, error }, { data: contas }] = await Promise.all([
-    sb.from('publicacoes').select('id, job_id, client_id, conta_id, status, agendada_para, publicada_em, permalink, erro, created_at').gte('agendada_para', desde.toISOString()).order('agendada_para', { ascending: false }).limit(500),
+    sb.from('publicacoes').select('*').gte('agendada_para', desde.toISOString()).order('agendada_para', { ascending: false }).limit(500),
     sb.from('instagram_contas').select('id, username'),
   ]);
   if (error) { $('#conteudo').innerHTML = `<div class="box empty">Publicações ainda não liberadas no banco (migração 007).</div>`; return; }
@@ -603,13 +662,13 @@ async function renderPublicacoes(dia) {
     `Publicados (${publicadas.length}):`, ...(publicadas.length ? publicadas.map((p) => linha(p, hora(p.publicada_em || p.agendada_para))) : ['• nenhum']),
     ...(erros.length ? ['', `Com erro (${erros.length}):`, ...erros.map((p) => linha(p, hora(p.agendada_para)))] : []),
     '', `Agendados para o dia seguinte (${amanha.length}):`, ...(amanha.length ? amanha.map((p) => linha(p, hora(p.agendada_para))) : ['• nenhum'])].join('\n');
-  const tab = (lst, quando) => lst.length ? `<table><tr><th>Quando</th><th>Cliente</th><th>Peça</th><th>Conta</th><th>Status</th></tr>${lst.map((p) => `<tr class="click" data-job="${p.job_id}"><td>${quando(p)}</td><td>${esc(nomeCliente(p.client_id))}</td><td>${esc(peca(p))}</td><td>${esc(arroba(p.conta_id))}</td><td>${p.permalink ? `<a href="${esc(p.permalink)}" target="_blank" rel="noopener">publicado</a>` : esc(STATUS_PUB[p.status] || p.status)}${p.erro ? ` <span class="small" style="color:#b91c1c">${esc(p.erro)}</span>` : ''}</td></tr>`).join('')}</table>` : '<div class="small mute" style="padding:12px">Nada por aqui.</div>';
+  const tab = (lst, quando, comMetricas) => lst.length ? `<table><tr><th>Quando</th><th>Cliente</th><th>Peça</th><th>Conta</th><th>Status</th>${comMetricas ? '<th>Desempenho</th>' : ''}</tr>${lst.map((p) => `<tr class="click" data-job="${p.job_id}"><td>${quando(p)}</td><td>${esc(nomeCliente(p.client_id))}</td><td>${esc(peca(p))}</td><td>${esc(arroba(p.conta_id))}</td><td>${p.permalink ? `<a href="${esc(p.permalink)}" target="_blank" rel="noopener">publicado</a>` : esc(STATUS_PUB[p.status] || p.status)}${p.erro ? ` <span class="small" style="color:#b91c1c">${esc(p.erro)}</span>` : ''}</td>${comMetricas ? `<td class="small">${textoMetricas(p)}</td>` : ''}</tr>`).join('')}</table>` : '<div class="small mute" style="padding:12px">Nada por aqui.</div>';
   $('#conteudo').innerHTML = `<div class="row" style="margin-bottom:12px"><h2 style="margin:0">Publicações</h2><span class="grow"></span><label class="small">Dia <input type="date" id="diaPub" value="${dia}" max="${hoje}" style="width:auto"></label></div>
     <div class="grid2">
       <div><h3 style="margin-top:0">Resumo do dia</h3><div class="box pad"><pre id="resumoPub" style="white-space:pre-wrap;margin:0;font-family:inherit;font-size:14px">${esc(resumo)}</pre>
         <div class="row" style="margin-top:10px"><span class="grow"></span><button class="btn sm" id="copiarResumo">Copiar para o WhatsApp</button></div></div>
         <h3>Agendadas</h3><div class="box">${tab(agendadas, (p) => dataHora(p.agendada_para))}</div></div>
-      <div><h3 style="margin-top:0">Publicadas em ${diaTxt}</h3><div class="box">${tab(publicadas, (p) => hora(p.publicada_em || p.agendada_para))}</div>
+      <div><h3 style="margin-top:0">Publicadas em ${diaTxt}</h3><div class="box">${tab(publicadas, (p) => hora(p.publicada_em || p.agendada_para), true)}</div>
         ${erros.length ? `<h3>Com erro em ${diaTxt}</h3><div class="box">${tab(erros, (p) => hora(p.agendada_para))}</div>` : ''}</div>
     </div>`;
   $('#diaPub').onchange = (e) => renderPublicacoes(e.target.value);

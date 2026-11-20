@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { trocarCodigo, publicarReel, publicarImagens } from '../lib/instagram.js';
+import { trocarCodigo, publicarReel, publicarImagens, lerMetricas } from '../lib/instagram.js';
 
 process.env.META_APP_ID = '111'; process.env.META_APP_SECRET = 'abc';
 const resp = (obj, status = 200) => ({ ok: status < 400, status, text: async () => JSON.stringify(obj) });
@@ -89,4 +89,20 @@ test('carrossel: um contêiner por imagem, contêiner CAROUSEL com os filhos e p
   await publicarImagens({ conta: { ig_user_id: '178', token: 'T' }, urls: ['https://x/1.jpg'], legenda: 'só uma', fetchImpl: f, espera: async () => {} });
   assert.ok(!chamadas.some((c) => c[2].media_type === 'CAROUSEL'));
   assert.equal(chamadas.find((c) => c[1].endsWith('/media'))[2].caption, 'só uma');
+});
+
+test('métricas: insights quando há permissão; sem ela, curtidas e comentários', async () => {
+  const comPermissao = async (u) => {
+    const url = new URL(u);
+    if (url.pathname.endsWith('/insights')) return resp({ data: [{ name: 'reach', values: [{ value: 340 }] }, { name: 'views', values: [{ value: 512 }] }, { name: 'likes', values: [{ value: 21 }] }, { name: 'saved', total_value: { value: 4 } }] });
+    return resp({ error: { message: 'x' } }, 400);
+  };
+  assert.deepEqual(await lerMetricas({ conta: { token: 'T' }, media_id: 'm1', fetchImpl: comPermissao }), { parcial: false, alcance: 340, views: 512, curtidas: 21, salvos: 4 });
+  const semPermissao = async (u) => {
+    const url = new URL(u);
+    if (url.pathname.endsWith('/insights')) return resp({ error: { message: '(#10) Application does not have permission for this action', code: 10 } }, 403);
+    return resp({ like_count: 9, comments_count: 2 });
+  };
+  const m = await lerMetricas({ conta: { token: 'T' }, media_id: 'm1', fetchImpl: semPermissao });
+  assert.equal(m.parcial, true); assert.equal(m.curtidas, 9); assert.equal(m.comentarios, 2); assert.match(m.motivo, /permission/);
 });

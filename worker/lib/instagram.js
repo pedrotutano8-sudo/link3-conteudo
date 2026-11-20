@@ -158,6 +158,21 @@ export async function publicarImagens({ conta, urls, legenda, fetchImpl = fetch,
   return { container_id: criacao, media_id: p.id, permalink };
 }
 
+// desempenho de um post: insights (precisa de instagram_manage_insights); sem a permissão, curtidas e comentários
+const METRICAS = { reach: 'alcance', views: 'views', likes: 'curtidas', comments: 'comentarios', saved: 'salvos', shares: 'compartilhamentos', total_interactions: 'interacoes' };
+export async function lerMetricas({ conta, media_id, fetchImpl = fetch }) {
+  const base = `https://${conta.host || 'graph.facebook.com'}/${V}`;
+  try {
+    const r = await pedir(`${base}/${media_id}/insights`, { params: { metric: Object.keys(METRICAS).join(',') }, token: conta.token, fetchImpl });
+    const m = { parcial: false };
+    for (const x of r.data || []) if (METRICAS[x.name]) m[METRICAS[x.name]] = Number(x.values?.[0]?.value ?? x.total_value?.value ?? 0);
+    return m;
+  } catch (e) {
+    const b = await pedir(`${base}/${media_id}`, { params: { fields: 'like_count,comments_count' }, token: conta.token, fetchImpl });
+    return { parcial: true, curtidas: Number(b.like_count || 0), comentarios: Number(b.comments_count || 0), motivo: e.message.slice(0, 160) };
+  }
+}
+
 // ciclo chamado pelo worker entre um pedido e outro
 export function criarInstagram({ supabaseUrl, supabaseKey, drive, workDir, log = console.log }) {
   const sb = createClient(supabaseUrl, supabaseKey, { auth: { persistSession: false } });
@@ -239,11 +254,35 @@ export function criarInstagram({ supabaseUrl, supabaseKey, drive, workDir, log =
     }
   }
 
+  // métricas dos posts publicados pelo sistema nos últimos 30 dias, atualizadas a cada 6 h
+  let ultimaColeta = 0;
+  async function metricas() {
+    if (Date.now() - ultimaColeta < 10 * 60 * 1000) return; // procura o que coletar a cada 10 min
+    ultimaColeta = Date.now();
+    const seis = new Date(Date.now() - 6 * 3600 * 1000).toISOString();
+    const mes = new Date(Date.now() - 30 * 86400 * 1000).toISOString();
+    const lista = ok(await sb.from('publicacoes').select('id, conta_id, media_id, metricas_em').eq('status', 'publicada').not('media_id', 'is', null).gte('publicada_em', mes).or(`metricas_em.is.null,metricas_em.lt.${seis}`).order('metricas_em', { ascending: true, nullsFirst: true }).limit(25));
+    const contas = {};
+    for (const p of lista) {
+      try {
+        contas[p.conta_id] ||= ok(await sb.from('instagram_contas').select('*').eq('id', p.conta_id).single());
+        const conta = contas[p.conta_id];
+        if (!conta.ativo || !conta.token) throw new Error('conta desconectada');
+        const m = await lerMetricas({ conta, media_id: p.media_id });
+        ok(await sb.from('publicacoes').update({ metricas: m, metricas_em: new Date().toISOString(), metricas_erro: m.parcial ? 'sem permissão de métricas: só curtidas e comentários' : null }).eq('id', p.id));
+      } catch (e) {
+        await sb.from('publicacoes').update({ metricas_em: new Date().toISOString(), metricas_erro: e.message.slice(0, 300) }).eq('id', p.id);
+      }
+    }
+    if (lista.length) log(`instagram: métricas de ${lista.length} post(s) atualizadas`);
+  }
+
   return {
     async ciclo() {
       if (!instagramAtivo()) return;
       try { await conexoes(); } catch (e) { log(`instagram (conexões): ${e.message}`); }
       try { await publicacoes(); } catch (e) { log(`instagram (publicações): ${e.message}`); }
+      try { await metricas(); } catch (e) { if (!/metricas/.test(e.message)) log(`instagram (métricas): ${e.message}`); }
     },
   };
 }

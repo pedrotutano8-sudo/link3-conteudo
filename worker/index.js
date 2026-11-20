@@ -9,6 +9,7 @@ import { criarAcabamento } from './lib/acabamento.js';
 import * as ia from './lib/ia.js';
 import { criarInstagram, instagramAtivo } from './lib/instagram.js';
 import { criarPecas } from './lib/pecas.js';
+import { criarRelatorios } from './lib/relatorios.js';
 
 const falta = conferir();
 if (falta.length) { console.error('Faltam variáveis de ambiente:', falta.join(', ')); process.exit(1); }
@@ -22,6 +23,7 @@ const { processar } = criarEtapas({ db, drive, workDir: config.workDir, acabamen
   ...(modulo1Ativo() ? { planejar: criarPlanejadorM1({ acabamento }), lote: criarLote({ db, drive, workDir: config.workDir }) } : {}) });
 // Instagram (conectar conta e publicar): roda entre um pedido e outro, no máximo a cada 10 s
 const instagram = criarInstagram({ supabaseUrl: config.supabaseUrl, supabaseKey: config.supabaseKey, drive, workDir: config.workDir });
+const relatorios = criarRelatorios({ supabaseUrl: config.supabaseUrl, supabaseKey: config.supabaseKey, claudeJson: config.anthropicKey ? ia.claudeJson : null });
 let ultimoIg = 0;
 const soltos = await db.liberarMeus(config.workerId).catch(() => []);
 if (soltos.length) console.log(`devolvidos para a fila depois do reinício: #${soltos.join(', #')}`);
@@ -33,6 +35,7 @@ console.log(`worker ${config.workerId} no ar · ${modulo1Ativo() ? 'Módulo 1 (t
 while (!parar) {
   let job = null;
   if (Date.now() - ultimoIg > 10000) { ultimoIg = Date.now(); await instagram.ciclo(); }
+  await relatorios.ciclo().catch((e) => console.log(`relatórios: ${e.message}`));
   try {
     job = await db.pegar(config.workerId);
     if (!job) { await espera(config.pollMs); continue; }
