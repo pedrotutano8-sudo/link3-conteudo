@@ -33,7 +33,7 @@ export function marcaDoKit(kit, cliente = {}) {
   const k = kit?.cores || {};
   const cores = {
     escuro: '#16207F', roxo: '#5F27E0', azul: '#0A33B0', verde: '#0E7A6A', destaque: '#F5C542', texto: '#FFFFFF', claro: '#F4F2FB',
-    ...(d.ativo ? {} : { escuro: k.secundaria || k.fundo || '#1B1B2F', roxo: k.principal || '#5F27E0', azul: k.secundaria || '#2B2B5F', verde: k.principal || '#5F27E0', destaque: k.destaque || '#F5C542' }),
+    ...(d.ativo ? {} : { escuro: k.secundaria || k.fundo || '#1B1B2F', roxo: k.principal || '#5F27E0', azul: k.secundaria || '#2B2B5F', verde: k.principal || '#5F27E0', destaque: k.destaque || '#F5C542', claro: k.claro || '#F7F5F2' }),
     ...(d.ativo ? d.cores || {} : {}),
   };
   return {
