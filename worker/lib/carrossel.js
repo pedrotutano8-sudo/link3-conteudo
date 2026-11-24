@@ -27,15 +27,41 @@ const dataUrl = (arq) => {
   return `data:image/${ext === 'jpg' ? 'jpeg' : ext};base64,${fs.readFileSync(arq).toString('base64')}`;
 };
 
+// cores: luminância relativa (WCAG), contraste e mistura
+const rgb = (h) => { const x = String(h || '').replace('#', ''); const v = x.length === 3 ? x.split('').map((c) => c + c).join('') : x.padEnd(6, '0').slice(0, 6); return [0, 2, 4].map((i) => parseInt(v.slice(i, i + 2), 16) || 0); };
+const hex = (c) => '#' + c.map((v) => Math.round(Math.max(0, Math.min(255, v))).toString(16).padStart(2, '0')).join('');
+export const luminancia = (h) => { const [r, g, b] = rgb(h).map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+export const contraste = (a, b) => { const [x, y] = [luminancia(a), luminancia(b)].sort((m, n) => n - m); return (x + 0.05) / (y + 0.05); };
+const mistura = (a, b, t) => { const [x, y] = [rgb(a), rgb(b)]; return hex(x.map((v, i) => v + (y[i] - v) * t)); };
+
+// paleta das lâminas a partir das cores do kit (marca sem design.json), sempre com texto e destaque legíveis
+export function paletaDoKit(k = {}) {
+  const N = (h) => (h ? hex(rgb(h)) : null);
+  const principal = N(k.principal) || '#5F27E0';
+  const candidatos = [N(k.secundaria), N(k.fundo), N(k.texto), principal].filter(Boolean);
+  const maisEscuro = candidatos.sort((a, b) => luminancia(a) - luminancia(b))[0];
+  const escuro = luminancia(maisEscuro) < 0.06 ? maisEscuro : mistura(principal, '#000000', 0.78);
+  const claro = '#F7F5F2';
+  let c;
+  if (luminancia(principal) > 0.35) {
+    // cor principal clara (amarelo, laranja claro…): fundo escuro, a cor da marca vira o destaque e o brilho dos cantos
+    c = { escuro, roxo: mistura(escuro, principal, 0.16), azul: mistura(escuro, '#000000', 0.25), verde: mistura(escuro, principal, 0.45), destaque: principal };
+  } else {
+    let destaque = N(k.destaque) || '#F5C542';
+    if (contraste(destaque, principal) < 2.5) destaque = mistura(principal, '#FFFFFF', 0.8);
+    c = { escuro, roxo: principal, azul: mistura(principal, escuro, 0.5), verde: mistura(principal, '#FFFFFF', 0.12), destaque };
+  }
+  return { ...c, texto: '#FFFFFF', claro, destaqueClaro: contraste(principal, claro) >= 3 ? principal : escuro };
+}
+
 // identidade para as lâminas: design.json da marca (se houver) ou cores do kit; funciona para qualquer cliente
 export function marcaDoKit(kit, cliente = {}) {
   const d = kit?.acabamento?.design || {};
   const k = kit?.cores || {};
-  const cores = {
-    escuro: '#16207F', roxo: '#5F27E0', azul: '#0A33B0', verde: '#0E7A6A', destaque: '#F5C542', texto: '#FFFFFF', claro: '#F4F2FB',
-    ...(d.ativo ? {} : { escuro: k.secundaria || k.fundo || '#1B1B2F', roxo: k.principal || '#5F27E0', azul: k.secundaria || '#2B2B5F', verde: k.principal || '#5F27E0', destaque: k.destaque || '#F5C542', claro: k.claro || '#F7F5F2' }),
-    ...(d.ativo ? d.cores || {} : {}),
-  };
+  const cores = d.ativo
+    ? { escuro: '#16207F', roxo: '#5F27E0', azul: '#0A33B0', verde: '#0E7A6A', destaque: '#F5C542', texto: '#FFFFFF', claro: '#F4F2FB', ...(d.cores || {}) }
+    : paletaDoKit(k);
+  cores.destaqueClaro ||= cores.roxo;
   return {
     marca: d.marca || cliente.nome || '',
     arroba: d.arroba || kit?.arroba || cliente.instagram || '',
@@ -208,7 +234,7 @@ export function montarHtmlLamina({ lamina: l, k, n, tipo = 'carrossel', marca, f
   const c = marca.cores;
   const claro = ['texto', 'lista', 'numero'].includes(l.layout) && k % 2 === 0 && tipo !== 'post';
   const tx = claro ? c.escuro : c.texto;
-  const dest = claro ? c.roxo : c.destaque;
+  const dest = claro ? c.destaqueClaro : c.destaque;
   const foto = l.foto != null ? fotos[l.foto] : null;
   const fotoUrl = foto ? dataUrl(foto.arquivo) : '';
   const posCheia = posicaoFoto(foto, W, H, 0.32);

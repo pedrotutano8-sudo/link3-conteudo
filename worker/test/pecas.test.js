@@ -94,3 +94,15 @@ test('carrossel: Drive (pasta com fotos e documento) → IA → lâminas → pr�
   assert.equal(eventos.at(-1).campos.final_drive_id, 'sub1');
   assert.ok(!fs.existsSync(path.join(tmp, 'work', 'j9')));
 });
+
+test('paleta do kit: destaque e texto sempre legíveis (cor da marca clara vira destaque em fundo escuro)', async () => {
+  const { paletaDoKit, contraste } = await import('../lib/carrossel.js');
+  for (const cores of [{ principal: '#f0c41d', secundaria: '#161614', fundo: '#fff' }, { principal: '#1d4ed8', secundaria: '#0f172a' }, { principal: '#C2410C', destaque: '#E4572E' }, { principal: '#fff' }, { principal: '#abc' }]) {
+    const c = paletaDoKit(cores);
+    assert.ok(contraste(c.destaque, c.roxo) >= 2.5, `destaque sobre o fundo: ${JSON.stringify(cores)}`);
+    assert.ok(contraste('#FFFFFF', c.escuro) >= 7, `texto branco sobre o escuro: ${JSON.stringify(cores)}`);
+    assert.ok(contraste(c.destaqueClaro, c.claro) >= 3, `destaque na lâmina clara: ${JSON.stringify(cores)}`);
+    assert.match(c.roxo, /^#[0-9a-f]{6}$/i);
+  }
+  assert.equal(paletaDoKit({ principal: '#f0c41d', secundaria: '#161614' }).destaque, '#f0c41d');
+});
