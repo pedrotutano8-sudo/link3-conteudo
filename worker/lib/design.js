@@ -225,6 +225,9 @@ export function montarHtml({ plano, palavras, duracao, cfg, logo = null, broll =
   const flashes = [];
   if (ritmo) for (const c of cortes) if (c < duracao - 0.5 && !ocupadoFlash.some(([a, b]) => c >= a && c < b) && (!flashes.length || c - flashes[flashes.length - 1] >= 2.2)) flashes.push(c);
   const linha2 = esc(g.linha2 || '').split(' ').map((w, k) => `<span class="gw" id="gw${k}"${g.destaque && w.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '') === g.destaque.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '') ? ' data-d="1"' : ''}>${w}</span>`).join(' ');
+  // sombras na cor da marca: o escuro da marca puxado para o preto (antes era um azul-marinho fixo, da GNX)
+  const sRgb = (() => { const h = String(c.escuro || '#0a0c30').replace('#', ''); const n = parseInt(h.length === 3 ? h.split('').map((x) => x + x).join('') : h, 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => Math.round(v * 0.45)); })();
+  const sombra = (a) => `rgba(${sRgb[0]},${sRgb[1]},${sRgb[2]},${a})`;
   const fundo = `background:
       radial-gradient(55% 32% at 0% 0%, ${c.verde}cc 0%, transparent 70%),
       radial-gradient(60% 30% at 100% 100%, ${c.verde}bb 0%, transparent 70%),
@@ -241,7 +244,8 @@ html,body{margin:0;padding:0;background:transparent;width:1080px;height:1920px;o
 .tela{position:absolute;left:0;top:0;width:1080px;height:1920px;${fundo}}
 .elem{position:absolute;background:url('${elemento}') center/contain no-repeat}
 /* gancho */
-#gsombra{left:0;top:${ganchoEmBaixo ? gTopo - 220 : 0}px;width:1080px;height:${ganchoEmBaixo ? 760 : 760}px;background:${ganchoEmBaixo ? 'linear-gradient(to bottom, rgba(10,12,48,0) 0%, rgba(10,12,48,.72) 32%, rgba(10,12,48,.72) 68%, rgba(10,12,48,0) 100%)' : 'linear-gradient(to bottom, rgba(10,12,48,.78) 0%, rgba(10,12,48,.45) 55%, rgba(10,12,48,0) 100%)'}}
+#gsombra{left:0;top:${ganchoEmBaixo ? gTopo - 220 : 0}px;width:1080px;height:${ganchoEmBaixo ? 760 : 760}px;background:${ganchoEmBaixo ? `linear-gradient(to bottom, ${sombra(0)} 0%, ${sombra(0.72)} 32%, ${sombra(0.72)} 68%, ${sombra(0)} 100%)` : `linear-gradient(to bottom, ${sombra(0.78)} 0%, ${sombra(0.45)} 55%, ${sombra(0)} 100%)`}}
+#lsombra{left:0;top:960px;width:1080px;height:480px;background:linear-gradient(to bottom, ${sombra(0)} 0%, ${sombra(0.42)} 38%, ${sombra(0.42)} 62%, ${sombra(0)} 100%)}
 #g1{left:80px;top:${gTopo}px;width:920px;font-weight:500;font-size:54px;line-height:1.15;letter-spacing:.01em;color:rgba(255,255,255,.92);text-shadow:0 4px 18px rgba(0,0,0,.45)}
 #g2{left:80px;top:${gTopo + 76}px;width:920px;font-weight:900;font-size:124px;line-height:.98;letter-spacing:-.025em;text-shadow:0 8px 30px rgba(0,0,0,.45)}
 #g2 .gw{display:inline-block;opacity:0}
@@ -250,7 +254,7 @@ html,body{margin:0;padding:0;background:transparent;width:1080px;height:1920px;o
 #flash{left:0;top:0;width:1080px;height:1920px;background:#fff}
 /* legenda */
 .leg{left:50px;width:980px;top:1120px;text-align:center;font-weight:800;font-size:86px;line-height:1.08;letter-spacing:-.015em}
-.leg span{display:inline-block;margin:0 10px;opacity:0;text-shadow:0 3px 3px rgba(0,0,0,.35),0 6px 26px rgba(0,0,0,.55)}
+.leg span{display:inline-block;margin:0 10px;opacity:0;text-shadow:0 2px 2px rgba(0,0,0,.5),0 0 16px rgba(0,0,0,.45),0 6px 26px rgba(0,0,0,.6)}
 .leg span.d{color:${c.destaque};font-weight:900;font-style:italic}
 /* capítulo */
 .cap{left:0;top:0;width:1080px;height:1920px}
@@ -271,7 +275,7 @@ html,body{margin:0;padding:0;background:transparent;width:1080px;height:1920px;o
 #cit .txt{font-weight:800;font-size:56px;line-height:1.12;letter-spacing:-.015em}
 #cit .txt span{opacity:.32}
 /* impacto */
-.imp{left:50px;width:980px;top:200px;text-align:center;font-weight:900;font-style:italic;font-size:170px;line-height:1;letter-spacing:-.03em;color:${c.destaque};text-shadow:0 12px 50px rgba(0,0,0,.55)}
+.imp{left:50px;width:980px;top:200px;text-align:center;font-weight:900;font-style:italic;font-size:170px;line-height:1;letter-spacing:-.03em;color:${c.destaque};text-shadow:0 2px 3px rgba(0,0,0,.45),0 0 24px ${sombra(0.6)},0 12px 50px rgba(0,0,0,.55)}
 /* lista */
 .lista{left:70px;width:940px;top:1110px}
 .item{position:absolute;left:0;width:940px;height:104px;display:flex;align-items:center;gap:24px;padding:0 30px;border-radius:26px;background:${c.escuro}e0;border:2px solid rgba(255,255,255,.16);box-shadow:0 18px 44px rgba(0,0,0,.45);font-weight:800;font-size:46px;opacity:0}
@@ -288,6 +292,7 @@ html,body{margin:0;padding:0;background:transparent;width:1080px;height:1920px;o
 #fim .arroba{margin-top:30px;margin-left:6px;font-weight:800;font-size:36px;letter-spacing:.02em;color:rgba(255,255,255,.9)}
 </style></head><body><div id="r">
 <div class="x" id="gsombra"></div>
+<div class="x" id="lsombra"></div>
 <div class="x" id="gbarra"></div>
 <div class="x" id="g1">${esc(g.linha1)}</div>
 <div class="x fit" id="g2">${linha2}</div>
@@ -344,6 +349,9 @@ ${cauda > 0 ? '' : '<!-- sem encerramento -->'}<div class="x" id="fim" style="${
       const o=Math.min(cl((t-a)/0.25), cl((b-t)/D.cartao.sai)); set(el,o,'translateY('+y.toFixed(1)+'px)')});
     // legenda
     const oculta=dentro(t,D.sem);
+    // faixa escura atrás da legenda (vídeo claro, parede branca): aparece só com legenda na tela e fora do B-roll
+    { let vis=0; if(!oculta&&!dentro(t,D.broll.map(([a,b])=>[a-0.05,b]))) D.grupos.forEach((gr,k)=>{const ini=gr[0][1]-0.08, prox=k<D.grupos.length-1?D.grupos[k+1][0][1]-0.08:gr[gr.length-1][2]+0.6; const fim=Math.min(prox, gr[gr.length-1][2]+0.9); if(t>=ini-0.2&&t<fim+0.2) vis=Math.max(vis, Math.min(cl((t-ini+0.2)/0.2), cl((fim+0.2-t)/0.2)));});
+      set($('lsombra'), t<D.ganchoFim?0:vis); }
     D.grupos.forEach((gr,k)=>{const el=$('l'+k); const ini=gr[0][1]-0.08, prox=k<D.grupos.length-1?D.grupos[k+1][0][1]-0.08:gr[gr.length-1][2]+0.6;
       const fim=Math.min(prox, gr[gr.length-1][2]+0.9);
       if(oculta||t<ini||t>=fim){set(el,0);gr.forEach(([w])=>set($('w'+w),0));return}
