@@ -35,7 +35,7 @@ export async function gerarImagens(laminas, dir, { fetchImpl = fetch, log = () =
   const tarefas = laminas.map(async (l, k) => {
     if (!l.imagem?.descricao) return;
     // cena em lâmina clara vira faixa larga embaixo do texto: horizontal, para não cortar as pessoas; o resto, vertical
-    const tamanho = l.imagem.tipo !== 'objeto' && !laminaEscura(l, k, laminas.length, tipo, true) ? '1536x1024' : '1024x1536';
+    const tamanho = tipo !== 'reel' && l.imagem.tipo !== 'objeto' && !laminaEscura(l, k, laminas.length, tipo, true) ? '1536x1024' : '1024x1536';
     const prompt = `${promptImagem(l.imagem)}${tamanho === '1536x1024' ? ' Enquadramento horizontal, pessoas inteiras no quadro com a cabeça no terço de cima.' : ''}|${tamanho}`;
     // ajuste: a mesma descrição reaproveita a imagem já gerada
     const ant = anteriores[k];

@@ -10,6 +10,7 @@ import path from 'node:path';
 import { config } from './config.js';
 import { rodar } from './midia.js';
 import { fichaDoKit, contextoFicha } from './estilos.js';
+import { gerarImagens } from './imagens.js';
 
 const EXT_VIDEO = /\.(mov|mp4|m4v)$/i;
 const EXT_FOTO = /\.(heic|heif|jpe?g|png|webp)$/i;
@@ -24,7 +25,15 @@ export const pastasBroll = (kit) => {
   return [...new Set([...(Array.isArray(a.pastas_broll) ? a.pastas_broll : []), a.pasta_broll_id].filter(Boolean))];
 };
 
-export function criarAcabamento({ drive, ia, workDir, log = console.log }) {
+// B-roll gerado por IA quando a marca não tem pasta de imagens: precisa da chave da OpenAI e do B-roll ligado na ficha.
+// acabamento.broll_ia = false desliga; = true liga mesmo com pastas (completa quando o catálogo não combina).
+export const usaBrollIA = (kit, chave = config.openaiKey) => {
+  const a = kit?.acabamento || {};
+  if (!chave || a.broll_ia === false) return false;
+  return fichaDoKit(kit).elementos?.cartoes !== false;
+};
+
+export function criarAcabamento({ drive, ia, workDir, log = console.log, gerar = gerarImagens }) {
   const dirMarca = (kit) => { const d = path.join(workDir, '_broll', String(kit?.client_id || 'marca')); fs.mkdirSync(d, { recursive: true }); return d; };
   const lerJson = (arq, padrao) => { try { return JSON.parse(fs.readFileSync(arq, 'utf8')); } catch { return padrao; } };
 
@@ -69,11 +78,47 @@ export function criarAcabamento({ drive, ia, workDir, log = console.log }) {
   }
 
   // onde entram os clipes (tempos do vídeo final, já cortado), evitando o que outros reels da marca já usaram
+  // fotos geradas por IA no lugar do B-roll da marca: Claude escolhe o trecho e descreve, a OpenAI gera, o resto do
+  // caminho é o mesmo das fotos do Drive (zoom lento, cartão). Ficam em _broll/<cliente>/ia-<job>-<n>.foto.jpg
+  async function brollIA({ kit, job, palavras, duracao, custo }) {
+    if (!ia.imaginarBroll) return { broll: [], custo };
+    const r = await ia.imaginarBroll({ palavras, contexto: contextoFicha(fichaDoKit(kit)) });
+    custo = { usd: custo.usd + r.usd, entrada: custo.entrada + r.tokens.entrada, saida: custo.saida + r.tokens.saida };
+    const trechos = [];
+    for (const e of r.escolhas) {
+      const a = palavras[Number(e.de)], b = palavras[Number(e.ate)];
+      if (!a || !b || !String(e.descricao || '').trim()) continue;
+      const inicio = a.i;
+      const fim = Math.min(Math.max(b.f, inicio + 2), inicio + 3.5, duracao - 2);
+      if (inicio < 3 || fim - inicio < 1.5) continue;
+      if (trechos.some((x) => inicio < x.fim + 3 && fim > x.inicio - 3)) continue;
+      trechos.push({ inicio: +inicio.toFixed(2), fim: +fim.toFixed(2), descricao: String(e.descricao).trim() });
+      if (trechos.length === 3) break;
+    }
+    if (!trechos.length) return { broll: [], custo };
+    const dir = dirMarca(kit);
+    const tag = String(job?.numero || job?.id || Date.now()).replace(/[^\w-]/g, '');
+    // foto vertical de tela cheia (o cartão recorta ao centro)
+    const g = await gerar(trechos.map((t) => ({ layout: 'texto', imagem: { tipo: 'cena', descricao: t.descricao } })), path.join(dir, `ia-${tag}`), { log, tipo: 'reel' });
+    custo = { ...custo, usd: custo.usd + g.usd };
+    const broll = [];
+    trechos.forEach((t, k) => {
+      const im = g.imagens[k];
+      if (!im) return;
+      const id = `ia-${tag}-${k + 1}`;
+      fs.copyFileSync(im.arquivo, path.join(dir, `${id}.foto.jpg`));
+      broll.push({ id, nome: `${id}.jpg`, tipo: 'foto', ia: true, descricao: t.descricao, inicio: t.inicio, fim: t.fim, offset: 0 });
+    });
+    if (broll.length) log(`job ${job?.id}: ${broll.length} foto(s) de B-roll geradas por IA`);
+    return { broll, custo };
+  }
+
   async function planejarBroll({ kit, job, palavras, duracao }) {
     const zero = { usd: 0, entrada: 0, saida: 0 };
-    if (!pastasBroll(kit).length || !palavras?.length) return { broll: [], custo: zero };
+    if (!palavras?.length) return { broll: [], custo: zero };
+    if (!pastasBroll(kit).length) return usaBrollIA(kit) ? brollIA({ kit, job, palavras, duracao, custo: zero }) : { broll: [], custo: zero };
     const { clipes, custo } = await catalogo(kit);
-    if (!clipes.length) return { broll: [], custo };
+    if (!clipes.length) return usaBrollIA(kit) ? brollIA({ kit, job, palavras, duracao, custo }) : { broll: [], custo };
     const arqUsos = path.join(dirMarca(kit), 'usos-por-nome.json');
     const usos = lerJson(arqUsos, {});
     for (const k of Object.keys(usos)) usos[k] = (usos[k] || []).filter((j) => j !== job?.id);   // replanejar não conta como uso
@@ -110,6 +155,7 @@ export function criarAcabamento({ drive, ia, workDir, log = console.log }) {
     for (const b of broll) {
       if (b.tipo === 'foto') {
         const jpg = path.join(dir, `${b.id}.foto.jpg`);
+        if (!fs.existsSync(jpg) && b.ia) throw new Error(`foto gerada ${b.id} não está mais no servidor`);
         if (!fs.existsSync(jpg)) {
           // o Drive entrega a foto (inclusive HEIC do iPhone) já em JPEG pela miniatura grande
           const meta = await drive.meta(b.id);

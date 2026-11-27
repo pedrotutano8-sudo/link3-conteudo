@@ -280,3 +280,22 @@ export async function escolherBroll({ palavras, clipes, contexto = '' }, opts) {
   const lista = Array.isArray(r.saida?.broll) ? r.saida.broll : [];
   return { escolhas: lista, bruto: r.bruto, tokens: r.tokens, usd: r.usd };
 }
+
+const PROMPT_BROLL_IA = `Você é editor de reels de empresas. O vídeo é uma pessoa falando para a câmera e a marca NÃO tem imagens de apoio próprias: você vai pedir fotos geradas por IA (padrão banco de imagens premium) para cobrir trechos da fala, como um editor faria com B-roll.
+Regras:
+- 2 ou 3 inserções no total, cada uma cobrindo de 2 a 3,5 segundos de fala, onde a imagem ilustra exatamente o que é dito (ex.: falou de dentadura → mão de dentista segurando uma dentadura; falou de sorrir com vergonha → pessoa cobrindo a boca com a mão ao sorrir; falou de comer com segurança → pessoa mordendo uma maçã sorrindo).
+- Nunca cubra os primeiros 3 segundos, nem os últimos 2 segundos, nem o momento em que a pessoa diz o próprio nome ou cargo. Pelo menos 3 segundos de rosto entre uma inserção e outra.
+- "descricao": em português, concreta, do que aparece na foto (pessoas comuns brasileiras, ambiente, objeto, luz). Nada de texto escrito na imagem, logotipo, marca, pessoa famosa, sangue, procedimento cirúrgico aberto ou antes/depois com promessa de resultado.
+- Fotos variadas entre si (pessoa, objeto em close, ambiente).
+Responda só com JSON: {"broll": [{"de": índice da primeira palavra, "ate": índice da última palavra, "descricao": "..."}]}`;
+
+// B-roll gerado por IA: escolhe os trechos e descreve a foto de cada um (a foto é gerada depois, em imagens.js)
+export async function imaginarBroll({ palavras, contexto = '' }, opts) {
+  const r = await claudeJson({
+    system: PROMPT_BROLL_IA,
+    texto: `${contexto ? contexto + '\n\n' : ''}FALA DO VÍDEO (índice:palavra@segundo):\n${palavras.map((w, k) => `${k}:${w.p}@${w.i.toFixed(1)}`).join(' ')}`,
+    max: 3000,
+  }, opts);
+  const lista = Array.isArray(r.saida?.broll) ? r.saida.broll : [];
+  return { escolhas: lista, tokens: r.tokens, usd: r.usd };
+}
