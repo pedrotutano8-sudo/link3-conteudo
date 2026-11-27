@@ -5,8 +5,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { config } from './config.js';
 
-export const ESTILO_FOTO = 'Fotografia realista de banco de imagens premium, estilo editorial de escritório de advocacia: luz natural suave, '
-  + 'tons neutros acinzentados com toques de verde-petróleo, profundidade de campo rasa, composição limpa. '
+export const ESTILO_FOTO = 'Fotografia realista de banco de imagens premium, estilo editorial: pessoas brasileiras comuns com expressões e mãos naturais, '
+  + 'luz natural suave, tons neutros acinzentados com toques de verde-petróleo, profundidade de campo rasa, composição limpa com espaço livre na parte de cima. '
   + 'Sem nenhum texto, letra, número legível, logotipo ou marca d\'água.';
 export const ESTILO_OBJETO = 'Foto realista de estúdio de um único objeto, inteiro e centralizado, isolado em fundo transparente, '
   + 'luz suave lateral, sombras naturais. Sem texto, logotipo ou marca d\'água.';
