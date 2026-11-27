@@ -1,0 +1,26 @@
+{
+  "ativo": true,
+  "estilo": "editorial",
+  "marca": "Vidal & Lopes Advocacia",
+  "logo": "vidal/logo-branco.png",
+  "fonte": "Montserrat",
+  "cores": {
+    "escuro": "#21434C",
+    "escuro2": "#2F5560",
+    "claro": "#F3F4F6",
+    "tinta": "#26363C",
+    "corpo": "#3E4B50",
+    "arco": "#E2E6E9",
+    "caixa": "#2C4A53",
+    "caixaTexto": "#FFFFFF",
+    "linha": "#8FA6AC",
+    "roxo": "#2F5560",
+    "azul": "#21434C",
+    "verde": "#2F5560",
+    "destaque": "#F3F4F6",
+    "texto": "#FFFFFF"
+  },
+  "arroba": "@vidal_escritorio_adv",
+  "cta": "Fale com o Vidal & Lopes Advocacia",
+  "origem": "Carrosséis aprovados da Vidal no Trello da Link 3 (nov/2026): verde-petróleo, cinza-claro, Montserrat, destaque em caixa, traço curto, arcos e faixas diagonais. Logo: IDV VISUAL/pp-branco.png."
+}

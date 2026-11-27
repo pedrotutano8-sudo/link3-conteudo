@@ -9,19 +9,20 @@ import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import { config } from './config.js';
 import { MARCAS_DIR } from './design.js';
+import { montarEditorial } from './laminas-editorial.js';
 
 export const W = 1080, H = 1350;
 const FONTES = fileURLToPath(new URL('../node_modules/@fontsource/montserrat/files/', import.meta.url));
 export const LAYOUTS = ['capa', 'texto', 'lista', 'numero', 'citacao', 'foto', 'cta'];
 const LAYOUTS_POST = ['capa', 'numero', 'citacao', 'foto'];
 
-const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
-// *palavra* no texto vira destaque (cor da marca)
-const marcar = (s) => esc(s).replace(/\*([^*]{1,60})\*/g, '<em>$1</em>');
+export const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+// *palavra* no texto vira destaque (cor da marca ou caixa, conforme o estilo); **palavra** vira negrito
+export const marcar = (s) => esc(s).replace(/\*\*([^*]{1,160})\*\*/g, '<strong>$1</strong>').replace(/\*([^*]{1,90})\*/g, '<em>$1</em>');
 const semMarca = (s) => String(s ?? '').replace(/\*/g, '');
 const palavras = (s) => semMarca(s).trim().split(/\s+/).filter(Boolean);
 const corta = (s, n) => { const w = palavras(s); if (w.length <= n) return String(s ?? '').trim(); let r = String(s).trim().split(/\s+/).slice(0, n).join(' '); if ((r.match(/\*/g) || []).length % 2) r += '*'; return r.replace(/[,;:–-]+$/, '') + '…'; };
-const dataUrl = (arq) => {
+export const dataUrl = (arq) => {
   if (!arq || !fs.existsSync(arq)) return '';
   const ext = path.extname(arq).slice(1).toLowerCase();
   return `data:image/${ext === 'jpg' ? 'jpeg' : ext};base64,${fs.readFileSync(arq).toString('base64')}`;
@@ -32,7 +33,7 @@ const rgb = (h) => { const x = String(h || '').replace('#', ''); const v = x.len
 const hex = (c) => '#' + c.map((v) => Math.round(Math.max(0, Math.min(255, v))).toString(16).padStart(2, '0')).join('');
 export const luminancia = (h) => { const [r, g, b] = rgb(h).map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
 export const contraste = (a, b) => { const [x, y] = [luminancia(a), luminancia(b)].sort((m, n) => n - m); return (x + 0.05) / (y + 0.05); };
-const mistura = (a, b, t) => { const [x, y] = [rgb(a), rgb(b)]; return hex(x.map((v, i) => v + (y[i] - v) * t)); };
+export const mistura = (a, b, t) => { const [x, y] = [rgb(a), rgb(b)]; return hex(x.map((v, i) => v + (y[i] - v) * t)); };
 
 // paleta das lâminas a partir das cores do kit (marca sem design.json), sempre com texto e destaque legíveis
 export function paletaDoKit(k = {}) {
@@ -63,6 +64,7 @@ export function marcaDoKit(kit, cliente = {}) {
     : paletaDoKit(k);
   cores.destaqueClaro ||= cores.roxo;
   return {
+    estilo: d.ativo && d.estilo ? d.estilo : 'padrao',
     marca: d.marca || cliente.nome || '',
     arroba: d.arroba || kit?.arroba || cliente.instagram || '',
     cta: d.cta || 'Saiba mais',
@@ -90,7 +92,38 @@ Regras:
 - "copy": legenda do post no tom da marca (gancho na 1ª linha, 2 a 4 parágrafos curtos, chamada no fim, até 5 hashtags). "cta": a chamada em poucas palavras.
 Responda só com JSON: {"laminas": [{"layout": "capa", "rotulo": "", "titulo": "", "subtitulo": "", "texto": "", "itens": [], "numero": "", "autor": "", "foto": null, "recorte": false}], "focos": {"0": {"x": 50, "y": 35}}, "copy": "", "cta": ""}`;
 
+// Modo fiel: o pedido (ou o documento do Drive) já traz o texto de cada lâmina ("SLIDE 1", "Slide 2: ...").
+// Aí a IA só distribui o texto nas lâminas e marca destaques; não resume, não corta e não reescreve.
+const PROMPT_FIEL = `MODO FIEL AO DESCRITIVO (obrigatório): o texto-base já traz o texto aprovado de cada lâmina.
+- Uma lâmina por SLIDE do texto-base, na mesma ordem e na mesma quantidade (mesmo que passe de 10, junte os dois últimos só se necessário). O primeiro é capa; o de encerramento/CTA é cta. Post estático: 1 lâmina com todo o texto.
+- Use EXATAMENTE as palavras do texto-base: nada de resumir, cortar, trocar palavras, acrescentar frase ou inventar dado. Os limites de palavras dos layouts NÃO valem neste modo.
+- Rótulos como "SLIDE 3", "CAPA", "ENCERRAMENTO", "CTA", "(capa)" não entram na lâmina. O título de seção do slide (ex.: "SLIDE 2 — O DIREITO À LICENÇA") vira o "titulo" da lâmina; os parágrafos viram "texto" (separe parágrafos com \\n\\n); listas com "-" viram "itens" (o parágrafo antes da lista vai em "texto"). Na capa: primeira frase = "titulo", o resto = "subtitulo". Em "Mito: ... Verdade: ...", use "texto" no formato "Mito: ...\\n\\nVerdade: ...".
+- Mantenha caixa alta/baixa e pontuação como estão. Pode tirar aspas que só delimitam o texto do slide.
+- Destaques: em cada lâmina, marque com *asteriscos* 1 trecho curto (1 a 4 palavras) que vai numa caixa de destaque, e no corpo marque com **dois asteriscos** de 1 a 3 trechos importantes em negrito. Só marcação: as palavras continuam as mesmas.
+- "rotulo" fica vazio. Não use layouts numero, citacao nem foto sem foto.
+- Se o texto-base trouxer LEGENDA, use-a como "copy" sem mudar nada; senão escreva a "copy" como de costume.`;
+
+// lê o texto-base com "SLIDE 1"/"Slide 2:" e decide o modo fiel
+export function ehDescritivo(texto = '') {
+  return (String(texto).match(/(^|\n)\W{0,3}slide\s*\d+/gi) || []).length >= 2 || /^\s*\*\*[^*\n]{3,}\*\*\s*\n/.test(String(texto));
+}
+
+// quanto do texto-base (sem rótulos e sem a legenda) aparece nas lâminas, de 0 a 1
+export function fidelidade(base, plano) {
+  const norm = (t) => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9%º°ª]+/g, ' ').trim().split(' ').filter(Boolean);
+  const semLegenda = String(base).split(/\n\s*\W{0,2}legenda\W{0,2}\s*:?/i)[0];
+  const limpo = semLegenda.replace(/\W{0,3}slide\s*\d+\s*(\([^)]*\))?\s*[—–:-]?\s*(capa|encerramento|cta)?\W{0,3}/gi, ' ');
+  const alvo = norm(limpo).filter((w) => !['capa', 'cta', 'encerramento', 'mito', 'verdade'].includes(w));
+  const tem = new Map();
+  for (const l of plano.laminas || []) for (const w of norm([l.titulo, l.subtitulo, l.texto, ...(l.itens || []), l.numero, l.autor].join(' ').replace(/\*/g, ''))) tem.set(w, (tem.get(w) || 0) + 1);
+  let ok = 0;
+  for (const w of alvo) if (tem.get(w) > 0) { ok++; tem.set(w, tem.get(w) - 1); }
+  return alvo.length ? Math.round((ok / alvo.length) * 100) / 100 : 1;
+}
+
 export async function planejarPeca({ tipo, comando = '', ficha = null, marca = '', texto = '', fotos = [], ajuste = '', anterior = null }, { claudeJson }) {
+  const base = ehDescritivo(texto) ? texto : ehDescritivo(comando) ? comando : '';
+  const fiel = Boolean(base);
   const partes = [
     `TIPO: ${tipo === 'post' ? 'post estático (1 lâmina)' : 'carrossel'}`,
     `MARCA: ${marca}`,
@@ -102,25 +135,29 @@ export async function planejarPeca({ tipo, comando = '', ficha = null, marca = '
     fotos.length ? `FOTOS: ${fotos.map((f, k) => `${k}: ${f.nome}`).join(' | ')} (as imagens vêm na mesma ordem)` : 'FOTOS: nenhuma',
     anterior ? `PLANO ANTERIOR (JSON):\n${JSON.stringify({ laminas: anterior.laminas, focos: anterior.focos, copy: anterior.copy, cta: anterior.cta })}\n\nAJUSTE PEDIDO (mude só o que foi pedido e mantenha o resto igual): ${ajuste}` : '',
   ].filter(Boolean).join('\n\n');
-  const r = await claudeJson({ system: PROMPT, texto: partes, imagens: fotos.map((f) => f.b64).filter(Boolean), max: 4000 });
+  const r = await claudeJson({ system: fiel ? `${PROMPT}\n\n${PROMPT_FIEL}` : PROMPT, texto: partes, imagens: fotos.map((f) => f.b64).filter(Boolean), max: fiel ? 6000 : 4000 });
   if (!r.saida?.laminas) throw new Error('A IA não devolveu o plano das lâminas');
-  return { plano: limparPeca(r.saida, { tipo, nFotos: fotos.length }), usd: r.usd, tokens: r.tokens };
+  const plano = limparPeca(r.saida, { tipo, nFotos: fotos.length, fiel });
+  if (fiel) { plano.fiel = true; plano.fidelidade = fidelidade(base, plano); }
+  return { plano, usd: r.usd, tokens: r.tokens };
 }
 
 // valida o que a IA devolveu: layouts conhecidos, limites de texto, fotos que existem, capa primeiro e cta no fim
-export function limparPeca(p, { tipo = 'carrossel', nFotos = 0 } = {}) {
+export function limparPeca(p, { tipo = 'carrossel', nFotos = 0, fiel = false } = {}) {
   let ls = (Array.isArray(p.laminas) ? p.laminas : []).filter((l) => l && LAYOUTS.includes(l.layout));
+  // no modo fiel o texto é o aprovado pelo cliente: só um teto de segurança, sem cortar no meio
+  const lim = (n) => (fiel ? 400 : n);
   const usadas = new Set();
   ls = ls.map((l) => {
     let foto = Number.isInteger(l.foto) && l.foto >= 0 && l.foto < nFotos && !usadas.has(l.foto) ? l.foto : null;
     if (foto != null) usadas.add(foto);
     const x = {
       layout: l.layout,
-      rotulo: corta(semMarca(l.rotulo || ''), 3).toUpperCase(),
-      titulo: corta(l.titulo || '', l.layout === 'capa' ? 11 : 10),
-      subtitulo: corta(l.subtitulo || '', 14),
-      texto: corta(l.texto || '', l.layout === 'texto' ? 45 : l.layout === 'citacao' ? 26 : 28),
-      itens: (Array.isArray(l.itens) ? l.itens : []).map((i) => corta(String(i), 8)).filter(Boolean).slice(0, 5),
+      rotulo: fiel ? '' : corta(semMarca(l.rotulo || ''), 3).toUpperCase(),
+      titulo: corta(l.titulo || '', lim(l.layout === 'capa' ? 11 : 10)),
+      subtitulo: corta(l.subtitulo || '', lim(14)),
+      texto: corta(l.texto || '', lim(l.layout === 'texto' ? 45 : l.layout === 'citacao' ? 26 : 28)),
+      itens: (Array.isArray(l.itens) ? l.itens : []).map((i) => corta(String(i), lim(8))).filter(Boolean).slice(0, fiel ? 8 : 5),
       numero: String(l.numero || '').trim().slice(0, 6),
       autor: corta(l.autor || '', 6),
       foto,
@@ -134,6 +171,10 @@ export function limparPeca(p, { tipo = 'carrossel', nFotos = 0 } = {}) {
   if (tipo === 'post') {
     const l = ls.find((x) => LAYOUTS_POST.includes(x.layout)) || { ...(ls[0] || {}), layout: 'capa' };
     ls = [l];
+  } else if (fiel) {
+    // a quantidade e a ordem são as do descritivo: só garante capa no começo e cta no fim, sem inventar lâmina
+    if (ls.length) { ls[0].layout = 'capa'; if (ls.length > 1) ls[ls.length - 1].layout = 'cta'; }
+    if (ls.length > 10) ls = [...ls.slice(0, 9), ls[ls.length - 1]];
   } else {
     if (!ls.length || ls[0].layout !== 'capa') ls.unshift({ ...(ls[0] || {}), layout: 'capa', titulo: ls[0]?.titulo || p.cta || '' });
     if (ls.length < 2 || ls[ls.length - 1].layout !== 'cta') ls.push({ layout: 'cta', rotulo: '', titulo: p.cta || 'Fale com a gente', subtitulo: '', texto: '', itens: [], numero: '', autor: '', foto: null, recorte: false });
@@ -144,7 +185,7 @@ export function limparPeca(p, { tipo = 'carrossel', nFotos = 0 } = {}) {
     const n = Number(k);
     if (Number.isInteger(n) && n >= 0 && n < nFotos && v) focos[n] = { x: Math.max(0, Math.min(100, Number(v.x) || 50)), y: Math.max(0, Math.min(100, Number(v.y) || 40)) };
   }
-  return { laminas: ls, focos, copy: String(p.copy || '').trim(), cta: corta(p.cta || '', 8) };
+  return { laminas: ls, focos, copy: String(p.copy || '').trim(), cta: corta(p.cta || '', lim(8)) };
 }
 
 // ---------- fotos: tratamento e recorte ----------
@@ -222,15 +263,16 @@ export async function recortarFoto(entrada, saida, { modelo = process.env.RVM_MO
 }
 
 // ---------- HTML das lâminas ----------
-function fontes() {
+export function fontes() {
   const f = (peso, estilo = 'normal') => `@font-face{font-family:'M';font-weight:${peso};font-style:${estilo};src:url('file://${FONTES}montserrat-latin-${peso}-${estilo}.woff2') format('woff2')}`;
-  return [f(500), f(600), f(700), f(800), f(900), f(800, 'italic'), f(900, 'italic')].join('');
+  return [f(400), f(500), f(600), f(700), f(800), f(900), f(800, 'italic'), f(900, 'italic')].join('');
 }
 
 /**
  * @param {object} p  { lamina, k, n, tipo, marca, fotos: {indice: {arquivo, foco}}, recorte: {arquivo, toca} | null }
  */
 export function montarHtmlLamina({ lamina: l, k, n, tipo = 'carrossel', marca, fotos = {}, recorte = null }) {
+  if (marca.estilo === 'editorial') return montarEditorial({ lamina: l, k, n, tipo, marca, fotos, recorte });
   const c = marca.cores;
   const claro = ['texto', 'lista', 'numero'].includes(l.layout) && k % 2 === 0 && tipo !== 'post';
   const tx = claro ? c.escuro : c.texto;

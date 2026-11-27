@@ -11,7 +11,7 @@ if (!planoArq || !dir) { console.error('uso: node scripts/teste-carrossel.mjs <p
 fs.mkdirSync(dir, { recursive: true });
 const bruto = JSON.parse(fs.readFileSync(planoArq, 'utf8'));
 const tipo = bruto.tipo || 'carrossel';
-const plano = limparPeca(bruto, { tipo, nFotos: fotosIn.length });
+const plano = limparPeca(bruto, { tipo, nFotos: fotosIn.length, fiel: Boolean(bruto.fiel ?? true) });
 const design = JSON.parse(fs.readFileSync(path.join(MARCAS_DIR, marcaNome, 'design.json'), 'utf8'));
 const marca = marcaDoKit({ acabamento: { design } });
 const fotos = {};
