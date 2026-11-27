@@ -6,7 +6,12 @@
 // - logo no topo das lâminas claras e no fim.
 import { W, H, esc, marcar, dataUrl, fontes } from './carrossel.js';
 
-const paragrafos = (s) => String(s || '').split(/\n+/).map((x) => x.trim()).filter(Boolean).map((x) => `<p>${marcar(x)}</p>`).join('');
+// "Mito: …" / "Verdade: …" viram blocos com etiqueta (carrossel de mitos e verdades)
+const paragrafos = (s) => String(s || '').split(/\n+/).map((x) => x.trim()).filter(Boolean).map((x) => {
+  const mv = x.match(/^(mito|verdade)\s*:\s*(.+)$/i);
+  if (mv) return `<p class="mv"><span class="tag ${mv[1].toLowerCase()}">${mv[1].toUpperCase()}</span>${marcar(mv[2].replace(/^["“]|["”]$/g, ''))}</p>`;
+  return `<p>${marcar(x)}</p>`;
+}).join('');
 
 // ícones de linha (24x24) para itens de lista; a IA escolhe pelo nome
 export const ICONES = {
@@ -129,6 +134,9 @@ export function montarEditorial({ lamina: l, k, n, tipo = 'carrossel', marca, im
       miolo = `<div class="grande">${esc(l.numero)}</div><h2>${marcar(l.titulo)}</h2>${seta}${l.texto ? `<div class="txt">${paragrafos(l.texto)}</div>` : ''}`;
     } else if (l.layout === 'citacao') {
       miolo = `<div class="aspas">“</div><h2 class="cit">${marcar(l.texto || l.titulo)}</h2>${l.autor ? `<div class="autor">${esc(l.autor)}</div>` : ''}`;
+    } else if (!String(l.titulo || '').trim()) {
+      // lâmina só de texto (ex.: mito e verdade): texto maior, sem título vazio
+      miolo = `<div class="txt solo">${paragrafos(l.texto)}</div>`;
     } else {
       miolo = `<h2>${escuro ? chevron : ''}${marcar(l.titulo)}</h2>${seta}${l.texto ? `<div class="txt">${paragrafos(l.texto)}</div>` : ''}`;
     }
@@ -168,6 +176,11 @@ strong{font-weight:700;color:${escuro ? '#FFFFFF' : c.tinta}}
 .txt{margin-top:46px}
 p{margin:0 0 34px;font-weight:500;font-size:44px;line-height:1.42;color:${corpoCor};text-wrap:pretty}
 p:last-child{margin-bottom:0}
+.txt.solo{margin-top:0}
+.txt.solo p{font-size:54px;line-height:1.36;font-weight:500;margin-bottom:56px}
+p.mv .tag{display:table;margin:0 0 18px;padding:.12em .5em;font-size:.62em;font-weight:800;letter-spacing:.14em;line-height:1.2}
+p.mv .tag.mito{border:3px solid ${escuro ? 'rgba(255,255,255,.85)' : c.tinta};color:${escuro ? '#fff' : c.tinta}}
+p.mv .tag.verdade{background:${caixa};color:${caixaTx};border:3px solid ${caixa}}
 p em{font-weight:700}
 ol{list-style:none;margin:48px 0 0;padding:0;display:flex;flex-direction:column;gap:30px;position:relative}
 ol:before{content:'';position:absolute;left:47px;top:48px;bottom:48px;width:2px;background:${escuro ? 'rgba(255,255,255,.3)' : '#D3D9DD'}}
