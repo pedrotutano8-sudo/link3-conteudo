@@ -143,7 +143,7 @@ html,body{margin:0;padding:0;width:${W}px;height:${H}px;overflow:hidden;backgrou
 .faixas i{display:block;width:34px;height:760px;background:rgba(255,255,255,.07)}
 .faixas i:nth-child(2){background:rgba(255,255,255,.05)}.faixas i:nth-child(3){background:rgba(255,255,255,.035)}
 .cena-baixo{position:absolute;left:0;right:0;bottom:0;z-index:1}
-.cena-baixo img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:50% 55%}
+.cena-baixo img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:50% 22%}
 .funde{position:absolute;inset:0}
 .fita{position:absolute;inset:0;width:100%;height:100%;z-index:1}
 .objeto{position:absolute;z-index:2;width:auto;max-width:660px;object-fit:contain;object-position:bottom right;filter:drop-shadow(0 24px 40px rgba(0,0,0,.18))}
