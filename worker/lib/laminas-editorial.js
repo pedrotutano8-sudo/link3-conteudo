@@ -168,7 +168,7 @@ ol:before{content:'';position:absolute;left:47px;top:48px;bottom:48px;width:2px;
 li{display:flex;align-items:center;gap:34px;font-weight:600;font-size:46px;line-height:1.28;color:${tx};position:relative}
 li .num{flex:0 0 96px;height:96px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:${escuro ? '#355A64' : '#E4E8EB'};border:2px solid ${escuro ? 'rgba(255,255,255,.35)' : '#D3D9DD'};color:${tx};font-weight:800;font-size:36px;position:relative;z-index:1}
 li .num svg{width:52px;height:52px}
-.grande{font-weight:800;font-size:260px;line-height:.9;letter-spacing:-.04em;margin:0 0 30px;color:${escuro ? '#FFFFFF' : c.caixa}}
+.grande{white-space:nowrap;font-weight:800;font-size:230px;line-height:.9;letter-spacing:-.04em;margin:0 0 30px;color:${escuro ? '#FFFFFF' : c.caixa}}
 .aspas{font-weight:800;font-size:260px;line-height:.6;height:120px;color:${escuro ? 'rgba(255,255,255,.5)' : c.linha}}
 h2.cit{font-weight:700;font-size:68px;line-height:1.24}
 .autor{margin-top:36px;font-weight:600;font-size:34px;color:${corpoCor}}
@@ -181,6 +181,9 @@ h2.cit{font-weight:700;font-size:68px;line-height:1.24}
 (async () => {
   await document.fonts.ready;
   await Promise.all([...document.images].map((i) => (i.complete ? 0 : new Promise((ok) => { i.onload = i.onerror = ok; }))));
+  for (const g of document.querySelectorAll('.grande')) {
+    for (let i = 0; i < 40 && g.scrollWidth > g.parentElement.clientWidth + 1; i++) g.style.fontSize = (parseFloat(getComputedStyle(g).fontSize) * 0.94) + 'px';
+  }
   for (const el of document.querySelectorAll('[data-fit]')) {
     const alvos = [...el.querySelectorAll('h1,h2,p,li,.sub,.grande')];
     for (let i = 0; i < 40 && el.scrollHeight > el.clientHeight + 1; i++) alvos.forEach((a) => { a.style.fontSize = (parseFloat(getComputedStyle(a).fontSize) * 0.95) + 'px'; });

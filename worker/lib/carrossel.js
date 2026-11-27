@@ -167,7 +167,7 @@ export function limparPeca(p, { tipo = 'carrossel', nFotos = 0, fiel = false } =
       subtitulo: corta(l.subtitulo || '', lim(14)),
       texto: corta(l.texto || '', lim(l.layout === 'texto' ? 45 : l.layout === 'citacao' ? 26 : 28)),
       itens: (Array.isArray(l.itens) ? l.itens : []).map((i) => corta(String(i), lim(8))).filter(Boolean).slice(0, fiel ? 8 : 5),
-      numero: String(l.numero || '').trim().slice(0, 6),
+      numero: String(l.numero || '').trim().slice(0, fiel ? 14 : 8),
       autor: corta(l.autor || '', 6),
       foto,
       recorte: Boolean(l.recorte && foto != null && l.layout === 'capa'),
