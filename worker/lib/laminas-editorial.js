@@ -32,6 +32,12 @@ export const ICONES = {
 
 const icone = (nome, cor) => `<svg viewBox="0 0 24 24" fill="none" stroke="${cor}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${ICONES[nome] || ICONES.check}</svg>`;
 
+// lâmina escura ou clara (a mesma regra decide o formato da imagem gerada: foto de fundo inteira na escura, faixa larga na clara)
+export function laminaEscura(l, k, n, tipo, temCena) {
+  const post = tipo === 'post' || n === 1;
+  return post ? Boolean(temCena) : ['capa', 'cta'].includes(l.layout) ? false : k % 2 === 1;
+}
+
 export function montarEditorial({ lamina: l, k, n, tipo = 'carrossel', marca, imagens = {} }) {
   const c = {
     escuro: '#21434C', escuro2: '#2F5560', claro: '#F3F4F6', tinta: '#26363C', corpo: '#3E4B50', arco: '#E2E6E9',
@@ -43,7 +49,7 @@ export function montarEditorial({ lamina: l, k, n, tipo = 'carrossel', marca, im
   const cena = img?.url && img.tipo === 'cena' ? img : null;
   const objeto = img?.url && img.tipo === 'objeto' ? img : null;
   // capa e cta claros; miolo alterna (2ª escura, 3ª clara...); post: escuro com foto, claro sem
-  const escuro = post ? Boolean(cena) : ['capa', 'cta'].includes(l.layout) ? false : k % 2 === 1;
+  const escuro = laminaEscura(l, k, n, tipo, cena);
   const tx = escuro ? '#FFFFFF' : c.tinta;
   const corpoCor = escuro ? 'rgba(255,255,255,.92)' : c.corpo;
   const caixa = escuro ? c.claro : c.caixa;
@@ -143,7 +149,7 @@ html,body{margin:0;padding:0;width:${W}px;height:${H}px;overflow:hidden;backgrou
 .faixas i{display:block;width:34px;height:760px;background:rgba(255,255,255,.07)}
 .faixas i:nth-child(2){background:rgba(255,255,255,.05)}.faixas i:nth-child(3){background:rgba(255,255,255,.035)}
 .cena-baixo{position:absolute;left:0;right:0;bottom:0;z-index:1}
-.cena-baixo img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:50% 22%}
+.cena-baixo img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:50% 40%}
 .funde{position:absolute;inset:0}
 .fita{position:absolute;inset:0;width:100%;height:100%;z-index:1}
 .objeto{position:absolute;z-index:2;width:auto;max-width:660px;object-fit:contain;object-position:bottom right;filter:drop-shadow(0 24px 40px rgba(0,0,0,.18))}

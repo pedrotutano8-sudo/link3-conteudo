@@ -114,7 +114,7 @@ export function criarPecas({ db, drive, workDir, claudeJson, log = console.log, 
       const porPrompt = Object.values(anteriores);
       const reaproveitar = {};
       r.plano.laminas.forEach((l, k) => { if (!l.imagem) return; const p = porPrompt.find((a) => a.prompt && a.prompt.startsWith(l.imagem.descricao)); if (p) reaproveitar[k] = p; });
-      const g = await gerar(r.plano.laminas, path.join(pasta(job), 'imagens'), { log: (m) => log(`job ${job.id}: ${m}`), anteriores: reaproveitar });
+      const g = await gerar(r.plano.laminas, path.join(pasta(job), 'imagens'), { log: (m) => log(`job ${job.id}: ${m}`), anteriores: reaproveitar, tipo: job.tipo });
       usdImagens = g.usd;
       for (const [k, im] of Object.entries(g.imagens)) {
         const destino = `${job.org_id}/${job.id}/imagens/${path.basename(im.arquivo)}`;
