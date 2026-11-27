@@ -1,0 +1,19 @@
+{
+  "ativo": true,
+  "marca": "Vitacare Odontologia Moderna",
+  "logo": "vitacare/logo-branco.png",
+  "fonte": "Montserrat",
+  "cores": {
+    "escuro": "#5A430C",
+    "roxo": "#D39F1C",
+    "azul": "#7F5F11",
+    "verde": "#E8B126",
+    "destaque": "#EFD490",
+    "texto": "#FFFFFF"
+  },
+  "elemento": "vitacare/elemento-v.png",
+  "arroba": "",
+  "cta": "Agende sua avaliação",
+  "assinatura": "odontologia moderna",
+  "origem": "Manual de marca Vitacare 2025: Montserrat; principais Dourado Ocre #D39F1C e Whisky #E6BC53; sobretons #7F5F11 #E8B126 #EFD490 #F8F1DE. Logo tirado do manual (versão em branco gerada a partir do dourado). Referência de edição: reel Sorriso Premium enviado pela Link 3 (27/11)."
+}
