@@ -10,6 +10,7 @@ import { fichaDoKit } from './estilos.js';
 import { textoArquivo } from './documento.js';
 import { rodar } from './midia.js';
 import { config } from './config.js';
+import { gerarImagens } from './imagens.js';
 
 const EXT_FOTO = /\.(heic|heif|jpe?g|png|webp)$/i;
 const ehFoto = (f) => EXT_FOTO.test(f.name || '') || /^image\//.test(f.mimeType || '');
@@ -17,7 +18,7 @@ const ehDoc = (f) => /google-apps\.document|wordprocessingml|pdf|text\/plain/.te
 const limpo = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\*/g, '').replace(/[^\w.-]+/g, ' ').trim().slice(0, 60);
 const MAX_FOTOS = 12;
 
-export function criarPecas({ db, drive, workDir, claudeJson, log = console.log }) {
+export function criarPecas({ db, drive, workDir, claudeJson, log = console.log, gerar = gerarImagens }) {
   const pasta = (job) => { const d = path.join(workDir, job.id); fs.mkdirSync(d, { recursive: true }); return d; };
   const estadoArq = (job) => path.join(pasta(job), 'estado.json');
   const ler = (job) => { try { return JSON.parse(fs.readFileSync(estadoArq(job), 'utf8')); } catch { return {}; } };
@@ -65,15 +66,30 @@ export function criarPecas({ db, drive, workDir, claudeJson, log = console.log }
   }
 
   // lâminas em JPG a partir do plano (determinístico: o mesmo plano gera as mesmas lâminas)
+  // imagens geradas do plano: ficam no storage (roteiro.imagens) e em cache na pasta do pedido
+  async function imagensLocais(job, roteiro) {
+    const out = {};
+    for (const [k, im] of Object.entries(roteiro.imagens || {})) {
+      const arquivo = path.join(pasta(job), 'imagens', path.basename(im.path));
+      if (!fs.existsSync(arquivo)) {
+        fs.mkdirSync(path.dirname(arquivo), { recursive: true });
+        try { await db.baixarPrevia(im.path, arquivo); } catch (err) { log(`job ${job.id}: imagem ${im.path} indisponível (${err.message})`); continue; }
+      }
+      out[k] = { arquivo, tipo: im.tipo, prompt: im.prompt };
+    }
+    return out;
+  }
+
   async function renderizar(job, roteiro, kit, cliente, material, dir) {
     const marca = marcaDoKit(kit, cliente);
+    const imagens = await imagensLocais(job, roteiro);
     const fotos = {};
     for (const [k, f] of material.fotos.entries()) fotos[k] = { ...f, foco: roteiro.focos?.[k] };
     const htmls = [];
     for (const [k, l] of roteiro.laminas.entries()) {
       let recorte = null;
       if (l.recorte && fotos[l.foto]) recorte = await recortarFoto(fotos[l.foto].arquivo, path.join(pasta(job), `recorte-${l.foto}.png`)).catch((err) => { log(`job ${job.id}: recorte falhou (${err.message})`); return null; });
-      htmls.push(montarHtmlLamina({ lamina: l, k, n: roteiro.laminas.length, tipo: job.tipo, marca, fotos, recorte }));
+      htmls.push(montarHtmlLamina({ lamina: l, k, n: roteiro.laminas.length, tipo: job.tipo, marca, fotos, recorte, imagens }));
     }
     return renderizarLaminas(htmls, dir, { log: (m) => log(`job ${job.id}: ${m}`) });
   }
@@ -86,9 +102,28 @@ export function criarPecas({ db, drive, workDir, claudeJson, log = console.log }
     const anterior = ajuste && job.roteiro?.laminas ? job.roteiro : null;
     const fotos = [];
     for (const f of material.fotos) fotos.push({ nome: f.nome, b64: await miniaturaB64(f.arquivo) });
-    const r = await planejarPeca({ tipo: job.tipo, comando: job.comando, ficha, marca: cliente.nome, texto: material.texto, fotos, ajuste: ajuste || '', anterior }, { claudeJson });
-    const custo = { custo_ia_usd: (Number(job.custo_ia_usd) || 0) + r.usd, tokens_entrada: (job.tokens_entrada || 0) + r.tokens.entrada, tokens_saida: (job.tokens_saida || 0) + r.tokens.saida };
-    const roteiro = { versao: 'peca', tipo: job.tipo, ...r.plano, fotos: material.fotos.map((f) => ({ id: f.id, nome: f.nome })), ficha: { estilo: ficha.estilo, nome: ficha.nome, versao: ficha.versao } };
+    const marca = marcaDoKit(kit, cliente);
+    const comImagens = marca.imagens === 'gerar';
+    const r = await planejarPeca({ tipo: job.tipo, comando: job.comando, ficha, marca: cliente.nome, texto: material.texto, fotos, ajuste: ajuste || '', anterior, imagens: comImagens }, { claudeJson });
+    let usdImagens = 0;
+    let imagensPlano = {};
+    if (comImagens && r.plano.laminas.some((l) => l.imagem)) {
+      await db.atualizar(job.id, 'planejando', {}, 'Gerando as imagens das lâminas');
+      // ajuste: a imagem com a mesma descrição é reaproveitada (não gera de novo)
+      const anteriores = anterior ? await imagensLocais(job, anterior) : {};
+      const porPrompt = Object.values(anteriores);
+      const reaproveitar = {};
+      r.plano.laminas.forEach((l, k) => { if (!l.imagem) return; const p = porPrompt.find((a) => a.prompt && a.prompt.startsWith(l.imagem.descricao)); if (p) reaproveitar[k] = p; });
+      const g = await gerar(r.plano.laminas, path.join(pasta(job), 'imagens'), { log: (m) => log(`job ${job.id}: ${m}`), anteriores: reaproveitar });
+      usdImagens = g.usd;
+      for (const [k, im] of Object.entries(g.imagens)) {
+        const destino = `${job.org_id}/${job.id}/imagens/${path.basename(im.arquivo)}`;
+        if (!reaproveitar[k] || reaproveitar[k].arquivo !== im.arquivo) await db.enviarPrevia(destino, im.arquivo, im.tipo === 'objeto' ? 'image/png' : 'image/jpeg');
+        imagensPlano[k] = { path: destino, tipo: im.tipo, prompt: im.prompt };
+      }
+    }
+    const custo = { custo_ia_usd: (Number(job.custo_ia_usd) || 0) + r.usd + usdImagens, tokens_entrada: (job.tokens_entrada || 0) + r.tokens.entrada, tokens_saida: (job.tokens_saida || 0) + r.tokens.saida };
+    const roteiro = { versao: 'peca', tipo: job.tipo, ...r.plano, imagens: imagensPlano, fotos: material.fotos.map((f) => ({ id: f.id, nome: f.nome })), ficha: { estilo: ficha.estilo, nome: ficha.nome, versao: ficha.versao } };
     await db.atualizar(job.id, 'renderizando', { roteiro, kit_versao: kit?.versao ?? null, ...custo });
     const dir = path.join(pasta(job), `previa-${Date.now()}`);
     const jpgs = await renderizar(job, roteiro, kit, cliente, material, dir);

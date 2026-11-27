@@ -47,3 +47,43 @@ test('estilo editorial: caixa de destaque, negrito, logo e paginação', () => {
   assert.ok(html.includes('02 / 05'));
   assert.ok(html.includes('box-decoration-break'));
 });
+
+test('imagens: plano guarda imagem e ícones; geração pela API com objeto transparente e reaproveitamento', async () => {
+  const { gerarImagens } = await import('../lib/imagens.js');
+  const fs = await import('node:fs');
+  const os = await import('node:os');
+  const path = await import('node:path');
+  const p = limparPeca({ laminas: [
+    { layout: 'capa', titulo: 'A', imagem: { tipo: 'cena', descricao: 'mãe abraçando criança' } },
+    { layout: 'lista', titulo: 'B', itens: ['x', 'y'], icones: ['Casa', 'documento', 'sobra'] },
+    { layout: 'cta', titulo: 'C', imagem: { tipo: 'objeto', descricao: 'estátua da Têmis' } },
+  ] }, { fiel: true });
+  assert.equal(p.laminas[0].imagem.tipo, 'cena');
+  assert.deepEqual(p.laminas[1].icones, ['casa', 'documento']);
+  assert.equal(p.laminas[2].imagem.tipo, 'objeto');
+  const corpos = [];
+  const png = Buffer.from('89504e470d0a1a0a', 'hex').toString('base64');
+  const fetchImpl = async (url, o) => { corpos.push(JSON.parse(o.body)); return { ok: true, status: 200, json: async () => ({ data: [{ b64_json: png }] }) }; };
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'img-'));
+  const g = await gerarImagens(p.laminas, dir, { fetchImpl, chave: 'sk-teste' });
+  assert.equal(Object.keys(g.imagens).length, 2);
+  assert.equal(corpos.find((b) => b.prompt.startsWith('estátua')).background, 'transparent');
+  assert.ok(g.imagens[0].arquivo.endsWith('.jpg') && g.imagens[2].arquivo.endsWith('.png'));
+  assert.ok(g.usd > 0);
+  // mesma descrição: não chama a API de novo
+  const g2 = await gerarImagens(p.laminas, dir, { fetchImpl, chave: 'sk-teste', anteriores: g.imagens });
+  assert.equal(corpos.length, 2);
+  assert.equal(g2.usd, 0);
+  // sem chave: sem imagem e sem erro
+  assert.deepEqual((await gerarImagens(p.laminas, dir, { fetchImpl, chave: '' })).imagens, {});
+});
+
+test('editorial com imagem: cena vira foto de fundo na lâmina escura e objeto fica ao lado do texto', () => {
+  const marca = marcaDoKit({ acabamento: { design: { ativo: true, estilo: 'editorial', imagens: 'gerar', marca: 'V' } } });
+  assert.equal(marca.imagens, 'gerar');
+  const arq = new URL('../../marcas/vidal/logo-branco.png', import.meta.url).pathname;
+  const escura = montarHtmlLamina({ lamina: { layout: 'texto', titulo: 'T', texto: 'x', itens: [] }, k: 1, n: 5, marca, imagens: { 1: { arquivo: arq, tipo: 'cena' } } });
+  assert.ok(escura.includes('class="cheia"'));
+  const cta = montarHtmlLamina({ lamina: { layout: 'cta', titulo: 'T', texto: 'x', itens: [] }, k: 4, n: 5, marca, imagens: { 4: { arquivo: arq, tipo: 'objeto' } } });
+  assert.ok(cta.includes('class="objeto"') && cta.includes('right:440px'));
+});

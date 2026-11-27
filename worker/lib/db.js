@@ -25,6 +25,7 @@ export function criarDb({ url, key }) {
     respostas: async (jobId) => ok(await sb.from('questions').select('pergunta, resposta').eq('job_id', jobId).not('resposta', 'is', null)),
     ultimoAjuste: async (jobId) => ok(await sb.from('job_revisions').select('comando').eq('job_id', jobId).order('created_at', { ascending: false }).limit(1))?.[0]?.comando || null,
     baixarAsset: async (path, destino) => { const blob = ok(await sb.storage.from('marcas').download(path)); fs.writeFileSync(destino, Buffer.from(await blob.arrayBuffer())); return destino; },
+    baixarPrevia: async (path, destino) => { const blob = ok(await sb.storage.from('previas').download(path)); fs.writeFileSync(destino, Buffer.from(await blob.arrayBuffer())); return destino; },
     enviarPrevia: async (path, arquivo, mime = 'video/mp4') => { ok(await sb.storage.from('previas').upload(path, fs.readFileSync(arquivo), { contentType: mime, upsert: true })); return path; },
   };
 }

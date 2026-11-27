@@ -20,11 +20,14 @@ for (const [k, f] of fotosIn.entries()) {
   const arquivo = await tratarFoto(f, path.join(dir, `foto-${k}.jpg`));
   fotos[k] = { arquivo, foco: plano.focos[k], ...(await medirFoto(arquivo)) };
 }
+// imagens geradas (teste): "arquivos": {"0": {"arquivo": "capa.jpg", "tipo": "cena"}} no plano
+const imagens = {};
+for (const [k, v] of Object.entries(bruto.arquivos || {})) imagens[k] = { arquivo: path.resolve(path.dirname(planoArq), v.arquivo), tipo: v.tipo };
 const t0 = Date.now();
 const htmls = [];
 for (const [k, l] of plano.laminas.entries()) {
   const recorte = l.recorte ? await recortarFoto(fotos[l.foto].arquivo, path.join(dir, `recorte-${k}.png`)) : null;
-  htmls.push(montarHtmlLamina({ lamina: l, k, n: plano.laminas.length, tipo, marca, fotos, recorte }));
+  htmls.push(montarHtmlLamina({ lamina: l, k, n: plano.laminas.length, tipo, marca, fotos, recorte, imagens }));
 }
 const jpgs = await renderizarLaminas(htmls, dir, { log: console.log });
 await folhaDeLaminas(jpgs, path.join(dir, 'folha.jpg'));

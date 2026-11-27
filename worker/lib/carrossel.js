@@ -65,6 +65,7 @@ export function marcaDoKit(kit, cliente = {}) {
   cores.destaqueClaro ||= cores.roxo;
   return {
     estilo: d.ativo && d.estilo ? d.estilo : 'padrao',
+    imagens: d.ativo && d.imagens === 'gerar' ? 'gerar' : '',
     marca: d.marca || cliente.nome || '',
     arroba: d.arroba || kit?.arroba || cliente.instagram || '',
     cta: d.cta || 'Saiba mais',
@@ -103,6 +104,13 @@ const PROMPT_FIEL = `MODO FIEL AO DESCRITIVO (obrigatório): o texto-base já tr
 - "rotulo" fica vazio. Não use layouts numero, citacao nem foto sem foto.
 - Se o texto-base trouxer LEGENDA, use-a como "copy" sem mudar nada; senão escreva a "copy" como de costume.`;
 
+const PROMPT_IMAGENS = `IMAGENS (esta marca usa imagem gerada por IA, no padrão de banco de imagens premium): em cada lâmina, quando couber, preencha "imagem": {"tipo": "cena" ou "objeto", "descricao": "o que aparece, em português, concreto e ligado ao tema"}.
+- "cena": foto de ambiente/pessoas (ex.: "mãe abraçando criança pequena no sofá de uma sala clara"; "mesa de escritório com documentos, carimbo e caneta"; "casal recebendo as chaves de um apartamento novo"). Sem texto na imagem, sem rosto em close de pessoa famosa, nada de tribunal dramático.
+- "objeto": um único objeto isolado, que vai recortado ao lado do texto (ex.: "estátua de bronze da deusa Têmis com balança"; "pilha de notas de 100 reais"; "chaves de casa com chaveiro"; "calendário de mesa"; "caneta tinteiro sobre contrato").
+- Capa: sempre com imagem (cena ou objeto). Última lâmina (cta): objeto (de preferência a estátua da Têmis ou uma balança da justiça). Miolo: imagem em cerca de metade das lâminas, alternando; lâmina com lista ou com muito texto fica sem imagem. Post estático: cena temática (ex.: Natal → mesa de Natal elegante em tons neutros e verde-petróleo; avaliação no Google → mão segurando celular com estrelas, sem texto).
+- Varie as imagens; nada de repetir o mesmo objeto no mesmo carrossel.
+- Em lâmina de lista, preencha "icones" (um por item) com nomes desta lista: documento, contrato, casa, dinheiro, calendario, relogio, balanca, escudo, check, pessoa, familia, presente, alerta, chave, maleta, cartao, grafico, pergunta.`;
+
 // lê o texto-base com "SLIDE 1"/"Slide 2:" e decide o modo fiel
 export function ehDescritivo(texto = '') {
   return (String(texto).match(/(^|\n)\W{0,3}slide\s*\d+/gi) || []).length >= 2 || /^\s*\*\*[^*\n]{3,}\*\*\s*\n/.test(String(texto));
@@ -121,7 +129,7 @@ export function fidelidade(base, plano) {
   return alvo.length ? Math.round((ok / alvo.length) * 100) / 100 : 1;
 }
 
-export async function planejarPeca({ tipo, comando = '', ficha = null, marca = '', texto = '', fotos = [], ajuste = '', anterior = null }, { claudeJson }) {
+export async function planejarPeca({ tipo, comando = '', ficha = null, marca = '', texto = '', fotos = [], ajuste = '', anterior = null, imagens = false }, { claudeJson }) {
   const base = ehDescritivo(texto) ? texto : ehDescritivo(comando) ? comando : '';
   const fiel = Boolean(base);
   const partes = [
@@ -135,7 +143,8 @@ export async function planejarPeca({ tipo, comando = '', ficha = null, marca = '
     fotos.length ? `FOTOS: ${fotos.map((f, k) => `${k}: ${f.nome}`).join(' | ')} (as imagens vêm na mesma ordem)` : 'FOTOS: nenhuma',
     anterior ? `PLANO ANTERIOR (JSON):\n${JSON.stringify({ laminas: anterior.laminas, focos: anterior.focos, copy: anterior.copy, cta: anterior.cta })}\n\nAJUSTE PEDIDO (mude só o que foi pedido e mantenha o resto igual): ${ajuste}` : '',
   ].filter(Boolean).join('\n\n');
-  const r = await claudeJson({ system: fiel ? `${PROMPT}\n\n${PROMPT_FIEL}` : PROMPT, texto: partes, imagens: fotos.map((f) => f.b64).filter(Boolean), max: fiel ? 6000 : 4000 });
+  const sistema = [PROMPT, fiel ? PROMPT_FIEL : '', imagens ? PROMPT_IMAGENS : ''].filter(Boolean).join('\n\n');
+  const r = await claudeJson({ system: sistema, texto: partes, imagens: fotos.map((f) => f.b64).filter(Boolean), max: fiel ? 6000 : 4000 });
   if (!r.saida?.laminas) throw new Error('A IA não devolveu o plano das lâminas');
   const plano = limparPeca(r.saida, { tipo, nFotos: fotos.length, fiel });
   if (fiel) { plano.fiel = true; plano.fidelidade = fidelidade(base, plano); }
@@ -163,6 +172,11 @@ export function limparPeca(p, { tipo = 'carrossel', nFotos = 0, fiel = false } =
       foto,
       recorte: Boolean(l.recorte && foto != null && l.layout === 'capa'),
     };
+    // imagem gerada por IA (marcas com "imagens": "gerar") e ícones dos itens de lista
+    if (l.imagem && typeof l.imagem === 'object' && String(l.imagem.descricao || '').trim() && foto == null) {
+      x.imagem = { tipo: l.imagem.tipo === 'objeto' ? 'objeto' : 'cena', descricao: corta(String(l.imagem.descricao), 70) };
+    }
+    if (Array.isArray(l.icones) && l.icones.length) x.icones = l.icones.slice(0, x.itens.length).map((i) => String(i || '').toLowerCase().trim());
     if (x.layout === 'foto' && x.foto == null) x.layout = 'texto';
     if (x.layout === 'lista' && x.itens.length < 2) x.layout = 'texto';
     if (x.layout === 'numero' && !x.numero) x.layout = 'texto';
@@ -271,8 +285,8 @@ export function fontes() {
 /**
  * @param {object} p  { lamina, k, n, tipo, marca, fotos: {indice: {arquivo, foco}}, recorte: {arquivo, toca} | null }
  */
-export function montarHtmlLamina({ lamina: l, k, n, tipo = 'carrossel', marca, fotos = {}, recorte = null }) {
-  if (marca.estilo === 'editorial') return montarEditorial({ lamina: l, k, n, tipo, marca, fotos, recorte });
+export function montarHtmlLamina({ lamina: l, k, n, tipo = 'carrossel', marca, fotos = {}, recorte = null, imagens = {} }) {
+  if (marca.estilo === 'editorial') return montarEditorial({ lamina: l, k, n, tipo, marca, fotos, recorte, imagens });
   const c = marca.cores;
   const claro = ['texto', 'lista', 'numero'].includes(l.layout) && k % 2 === 0 && tipo !== 'post';
   const tx = claro ? c.escuro : c.texto;
